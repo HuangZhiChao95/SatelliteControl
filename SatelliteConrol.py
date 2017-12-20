@@ -1,8 +1,12 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
 from env.SatelliteEnv import SatelliteEnv
 from policygradient.PolicyGradient import PolicyGradient
 import argparse
 import numpy as np
 import tensorflow as tf
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--method", help="Method for Reinforcement Learning, currently support PolicyGradient", default="PolicyGradient")
 parser.add_argument("--iteration", type=int, default=10000)
@@ -14,7 +18,7 @@ args = parser.parse_args()
 iteration = args.iteration
 method = args.method
 batchsize = args.batchsize
-config = tf.ConfigProto(device_count={"gpu":0})
+config = tf.ConfigProto()
 config.log_device_placement = True
 
 states = list()
