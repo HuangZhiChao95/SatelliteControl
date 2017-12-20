@@ -14,7 +14,7 @@ args = parser.parse_args()
 iteration = args.iteration
 method = args.method
 batchsize = args.batchsize
-config = tf.ConfigProto()
+config = tf.ConfigProto(device_count={"gpu":0})
 config.log_device_placement = True
 
 states = list()
