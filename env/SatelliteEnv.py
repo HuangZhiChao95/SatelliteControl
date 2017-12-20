@@ -74,7 +74,7 @@ class SatelliteEnv(gym.Env):
         tmp = self.q - [1,0,0,0]
         reward =  -10 * np.dot(tmp,tmp) - np.dot(action,action)*20
         done = False
-        if self.step_count*self.tsapn>1000:
+        if self.step_count*self.tsapn>1000 or reward<-10:
             done = True
         self.step_count = self.step_count+1
         return np.concatenate((self.q, self.wb)), reward, done, { }
@@ -102,7 +102,7 @@ class SatelliteEnv(gym.Env):
         self.step_count = 0
         self.q = self._eulerToq(theta)
         self.state_list = list()
-        return np.concatenate((self.q, self.wb, self.omega))
+        return np.concatenate((self.q, self.wb))
 
     def _render(self, mode='human', close=False):
         pass
