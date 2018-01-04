@@ -75,7 +75,7 @@ class SatelliteEnv(gym.Env):
         reward =  (-10 * np.dot(tmp,tmp) - np.dot(action,action)*20)*exp(self.step_count*self.tsapn/500)
         done = False
         self.step_count = self.step_count+1
-        if self.step_count*self.tsapn>1000 or reward<-40:
+        if self.step_count*self.tsapn>1500:
             done = True
             
         return np.concatenate((self.q, self.wb)), reward, done, { }

@@ -35,19 +35,47 @@ if method=="PolicyGradient":
     agent = PolicyGradient(init_std=1e-4)
     reward_list = list()
     rewards = np.zeros(batchsize, dtype=np.float32)
+    saver = tf.train.Saver()
+    lr_rate = 1e-3
     with tf.device('/gpu:0'):
         summary_writer = tf.summary.FileWriter('./log')
         with tf.Session(config=config) as sess:
             sess.run(tf.global_variables_initializer())
+
             for i in range(0, iteration):
                 Done = False
-                k=0
                 states = list()
+
+                if i % 100 == 0:
+                    saver.save(sess, "./model/fixedstd.ckpt")
+                    env = envs[0]
+                    state = env.reset()
+                    state = state[np.newaxis, :]
+
+                    for k in range(0,int(2000/args.tspan)):
+                        action = agent.predict(state, sess, std=0.0)
+                        state, reward, done, __ = env.step(action)
+                        state = state[np.newaxis, :]
+                        reward_list.append(reward/exp(k*args.tspan/500))
+
+                    result = {
+                                "state":np.array(agent.state_list),
+                                "action": np.array(agent.action_list),
+                                "reward": np.array(reward_list)
+                              }
+                    
+                    if os.path.exists("record"):
+                        os.mkdir("record")
+
+                    np.save("./record/fixedstd_{0}".format(i), np.array(result))
+                    reward_list.clear()
+                    agent.clearMem()
+
+                k=0
                 for env in envs:
                     state = env.reset()
                     states.append(state)
                 states = np.array(states, dtype=np.float32)
-                #print(states)
                 while not Done:
                     actions = agent.predict(states, sess)
                     flag = True
@@ -59,12 +87,17 @@ if method=="PolicyGradient":
                             flag = False
                     Done = flag
                     reward_list.append(rewards.copy())
-                    k = k+1
-                    if k % 100 ==0 and k>0:
-                        print("iteration={0}, step={1} reward={2} std={3}".format(i, k, np.mean(rewards/exp(k*args.tspan/500)), np.std(rewards/exp(k*args.tspan/500))))
 
-                target, summary_str = agent.update(reward_list, 1e-3, sess)
-                #summary_writer.add_summary(summary_str, i)
+                    if k % 100 ==0 and i % 10 ==0:
+                        print("iteration={0}, step={1} reward={2} std={3}".format(i, k, np.mean(rewards/exp(k*args.tspan/500)), np.std(rewards/exp(k*args.tspan/500))))
+                    k = k+1
+
+                target, summary_str = agent.update(reward_list, lr_rate, sess)
+
+                if i % 500 == 0:
+                    lr_rate = lr_rate/2
+
+                summary_writer.add_summary(summary_str, i)
                 print("iteration{0}, target={1}, step={2}".format(i, np.mean(target), k))
                 reward_list.clear()
 

@@ -3,3 +3,8 @@
 
 #pyc
 *.pyc
+
+#data model log
+log/*
+model/*
+record/*

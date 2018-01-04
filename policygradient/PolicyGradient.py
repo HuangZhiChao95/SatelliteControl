@@ -10,6 +10,7 @@ class PolicyGradient:
         self.target = tf.placeholder(dtype=tf.float32, shape=[None])
         self.action = tf.placeholder(dtype=tf.float32, shape=[None, output_dim])/amp;
         self.lr_rate = tf.placeholder(dtype=tf.float32)
+        self.std = tf.placeholder(dtype=tf.float32)
         self.gamma=gamma
 
         network = tl.layers.InputLayer(self.input)
@@ -17,12 +18,12 @@ class PolicyGradient:
             network = tl.layers.DenseLayer(network, n_units=unit_num, act=tf.nn.tanh, W_init=tf.truncated_normal_initializer(stddev=init_std), name="dense{0}".format(i))
 
         mean = tl.layers.DenseLayer(network, n_units=output_dim, W_init=tf.truncated_normal_initializer(stddev=init_std), name="mean").outputs
-        std = tl.layers.DenseLayer(network, n_units=output_dim, act=tf.nn.softplus, W_init=tf.truncated_normal_initializer(stddev=init_std), name="std").outputs + 1e-5
+        #std = tl.layers.DenseLayer(network, n_units=output_dim, act=tf.nn.softplus, W_init=tf.truncated_normal_initializer(stddev=init_std), name="std").outputs + 1e-5
         #k = tf.Variable(-0.05)
         #mean = k*(tf.slice(self.input,[0,1],[-1,3])+tf.slice(self.input,[0,4],[-1,3]))
 
         train_params = network.all_params
-        normal_dist = tf.contrib.distributions.Normal(mean, 1e-4)
+        normal_dist = tf.contrib.distributions.Normal(mean, self.std)
         self.action_predict = tf.squeeze(normal_dist.sample([1])) * amp
         log_prob = tf.reduce_prod(tf.squeeze(normal_dist.log_prob(self.action)), axis=1)
         self.loss = tf.reduce_sum(tf.multiply(-log_prob, self.target), axis=0) / batch_size
@@ -38,14 +39,16 @@ class PolicyGradient:
         self.action_list.clear()
         self.state_list.clear()
 
+    def clearMem(self):
+        self._clearMem()
+
     def _memorize(self, action, state):
         self.action_list.append(action.copy())
         self.state_list.append(state.copy())
 
-    def predict(self, state, sess):
-        action = sess.run(self.action_predict, {self.input: state})
+    def predict(self, state, sess, std=1e-4):
+        action = sess.run(self.action_predict, {self.input: state, self.std: std})
         self._memorize(action, state)
-        #print(state)
         return action
 
     def debug(self, state, sess):
@@ -60,9 +63,7 @@ class PolicyGradient:
             temp  = self.gamma*temp + reward[i]
             target[i] = temp - np.mean(temp)
             i = i-1
-            
-        #print(target)
-        #print(np.std(target,axis=1))
+
         target = target.reshape(-1)
         action_array = np.array(self.action_list)
         action_array = action_array.reshape((-1,action_array.shape[-1]))
@@ -72,14 +73,12 @@ class PolicyGradient:
             self.input: state_array,
             self.action: action_array,
             self.target: target,
-            self.lr_rate:lr_rate
+            self.lr_rate:lr_rate,
+            self.std: 1e-4
         }
 
         _, loss, summary_str = sess.run([self.train_op, self.loss, self.merge_op], feed_dict=feed_dict)
-        #debug = sess.run(self.oplist, feed_dict=feed_dict)
         print(loss)
-        #print(debug)
-        #print(np.sum(debug))
         self._clearMem()
         return temp, summary_str
 
