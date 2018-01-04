@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-from math import cos,sin
+from math import cos,sin,exp
 from scipy.integrate import odeint
 from gym import spaces
 
@@ -72,11 +72,12 @@ class SatelliteEnv(gym.Env):
         self.omega = states[-1, 7:]
 
         tmp = self.q - [1,0,0,0]
-        reward =  -10 * np.dot(tmp,tmp) - np.dot(action,action)*20
+        reward =  (-10 * np.dot(tmp,tmp) - np.dot(action,action)*20)*exp(self.step_count*self.tsapn/500)
         done = False
-        if self.step_count*self.tsapn>1000 or reward<-10:
-            done = True
         self.step_count = self.step_count+1
+        if self.step_count*self.tsapn>1000 or reward<-40:
+            done = True
+            
         return np.concatenate((self.q, self.wb)), reward, done, { }
 
 
