@@ -47,7 +47,7 @@ if method=="PolicyGradient":
                 states = list()
 
                 if i % 100 == 0:
-                    saver.save(sess, "./model/fixedstd.ckpt")
+                    saver.save(sess, "./model/fixedstd.ckpt", global_step=i)
                     env = envs[0]
                     state = env.reset()
                     state = state[np.newaxis, :]
@@ -63,7 +63,7 @@ if method=="PolicyGradient":
                                 "action": np.array(agent.action_list),
                                 "reward": np.array(reward_list)
                               }
-                    
+
                     if os.path.exists("record"):
                         os.mkdir("record")
 
@@ -92,13 +92,13 @@ if method=="PolicyGradient":
                         print("iteration={0}, step={1} reward={2} std={3}".format(i, k, np.mean(rewards/exp(k*args.tspan/500)), np.std(rewards/exp(k*args.tspan/500))))
                     k = k+1
 
-                target, summary_str = agent.update(reward_list, lr_rate, sess)
+                target, loss, summary_str = agent.update(reward_list, lr_rate, sess)
 
                 if i % 500 == 0:
                     lr_rate = lr_rate/2
 
                 summary_writer.add_summary(summary_str, i)
-                print("iteration{0}, target={1}, step={2}".format(i, np.mean(target), k))
+                print("iteration{0}, loss={3}, target={1}, step={2}".format(i, np.mean(target), k, loss))
                 reward_list.clear()
 
 

@@ -78,9 +78,9 @@ class PolicyGradient:
         }
 
         _, loss, summary_str = sess.run([self.train_op, self.loss, self.merge_op], feed_dict=feed_dict)
-        print(loss)
+        #print(loss)
         self._clearMem()
-        return temp, summary_str
+        return temp, loss, summary_str
 
 
 
