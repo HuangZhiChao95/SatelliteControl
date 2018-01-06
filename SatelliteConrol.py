@@ -64,7 +64,7 @@ if method=="PolicyGradient":
                                 "reward": np.array(reward_list)
                               }
 
-                    if os.path.exists("record"):
+                    if not os.path.exists("record"):
                         os.mkdir("record")
 
                     np.save("./record/fixedstd_{0}".format(i), np.array(result))
