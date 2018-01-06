@@ -68,7 +68,7 @@ if method == "PolicyGradient":
 
             #save record
             if i % 100 == 0:
-                saver.save(sess, "./model/{0}.ckpt",format(args.savename), global_step=i)
+                saver.save(sess, "./model/{0}.ckpt".format(args.savename), global_step=i)
                 env = test_env
                 state = env.reset()
                 state = state[np.newaxis, :]
