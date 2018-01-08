@@ -89,13 +89,13 @@ class SatelliteEnv(gym.Env):
         C = self._getParameter(self.defaultParameter, self.parameter, "C")
         Iw = self._getParameter(self.defaultParameter, self.parameter, "Iw")
         self.hmax = self._getParameter(self.defaultParameter, self.parameter, "hmax")
-        omega_max = self._getParameter(self.defaultParameter, self.parameter, "omega")
-        theta = self._getParameter(self.defaultParameter, self.parameter, "theta")
+        self.omega = self._getParameter(self.defaultParameter, self.parameter, "omega")
+        theta_max = self._getParameter(self.defaultParameter, self.parameter, "theta")
         wb_max = self._getParameter(self.defaultParameter, self.parameter, "wb")
         self.w0 = self._getParameter(self.defaultParameter, self.parameter, "w0")
         self.tsapn = self._getParameter(self.defaultParameter, self.parameter, "tspan")
 
-        self.omega = (2*np.random.rand(3)-1)*omega_max
+        theta = (2*np.random.rand(3)-1)*theta_max
         self.wb = (2*np.random.rand(3)-1)*wb_max
 
         self.Cw = C*Iw
