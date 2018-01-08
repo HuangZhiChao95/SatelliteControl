@@ -31,7 +31,7 @@ config.log_device_placement = False
 config.gpu_options.allow_growth = True
 
 states = list()
-penv = {"tspan": args.tspan, "theta": np.array([0.5, 0.5, 0.3])}
+penv = {"tspan": args.tspan, "theta": np.array([0.5, 0.5, 0.3]), "wb": np.array([0.001, 0.001, 0.001])}
 processes = list()
 queues = list()
 lockenvs= list()
