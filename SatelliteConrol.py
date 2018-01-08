@@ -38,8 +38,8 @@ penv = {
 }
 p_testenv = {
     "tspan": args.tspan,
-    "theta": np.array([0.5, 0.5, 0.3]),
-    "wb":np.ones(3)*0.02*np.pi/180
+    "theta": np.array([[0.5, 0.5, 0.3]]),
+    "wb":np.ones((1, 3))*0.02*np.pi/180
 }
 processes = list()
 queues = list()

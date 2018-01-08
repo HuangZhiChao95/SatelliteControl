@@ -60,7 +60,8 @@ class SatelliteEnv(gym.Env):
         self.reward_range = spaces.Box(np.array([-10]), np.array([0]))
         self.iteration = 0
         self.wb_list = self._getParameter(self.defaultParameter, self.parameter, "wb")
-        self.omega_list = self._getParameter(self.defaultParameter, self.parameter, "omega")
+        self.theta_list = self._getParameter(self.defaultParameter, self.parameter, "theta")
+
 
 
     def _step(self, action):
@@ -92,13 +93,14 @@ class SatelliteEnv(gym.Env):
         C = self._getParameter(self.defaultParameter, self.parameter, "C")
         Iw = self._getParameter(self.defaultParameter, self.parameter, "Iw")
         self.hmax = self._getParameter(self.defaultParameter, self.parameter, "hmax")
+        self.omega = self._getParameter(self.defaultParameter, self.parameter, "omega")
         theta = self._getParameter(self.defaultParameter, self.parameter, "theta")
         self.w0 = self._getParameter(self.defaultParameter, self.parameter, "w0")
         self.tsapn = self._getParameter(self.defaultParameter, self.parameter, "tspan")
 
-        self.omega = self.omega_list[self.iteration, :]
+        theta = self.theta_list[self.iteration, :]
         self.wb = self.wb_list[self.iteration, :]
-        self.iteration = (self.iteration+1) % len(self.omega_list)
+        self.iteration = (self.iteration+1) % len(self.theta_list)
 
         self.Cw = C*Iw
         self.Cw_inverse = np.linalg.inv(self.Cw)
