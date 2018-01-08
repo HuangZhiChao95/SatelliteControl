@@ -33,8 +33,8 @@ config.gpu_options.allow_growth = True
 states = list()
 penv = {
     "tspan": args.tspan,
-    "theta": (2*np.random.rand((5000,3))-1)*np.array([0.5, 0.5, 0.3]),
-    "wb":(2*np.random.rand((5000,3))-1)*np.array([0.001,0.001,0.001])
+    "theta": (2*np.random.rand((5000,3))-1)*np.diag([0.5, 0.5, 0.3]),
+    "wb":(2*np.random.rand((5000,3))-1)*np.diag([0.001,0.001,0.001])
 }
 p_testenv = {
     "tspan": args.tspan,
