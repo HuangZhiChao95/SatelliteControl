@@ -31,7 +31,16 @@ config.log_device_placement = False
 config.gpu_options.allow_growth = True
 
 states = list()
-penv = {"tspan": args.tspan, "theta": np.array([0.5, 0.5, 0.3])}
+penv = {
+    "tspan": args.tspan,
+    "theta": (2*np.random.rand((5000,3))-1)*np.array([0.5, 0.5, 0.3]),
+    "wb":(2*np.random.rand((5000,3))-1)*np.array([0.001,0.001,0.001])
+}
+p_testenv = {
+    "tspan": args.tspan,
+    "theta": np.array([0.5, 0.5, 0.3]),
+    "wb":np.ones(3)*0.02*np.pi/180
+}
 processes = list()
 queues = list()
 lockenvs= list()
@@ -60,7 +69,7 @@ if method == "PolicyGradient":
     saver = tf.train.Saver()
     lr_rate = 1e-3
     summary_writer = tf.summary.FileWriter('./log')
-    test_env = SatelliteEnv(penv)
+    test_env = SatelliteEnv(p_testenv)
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
 

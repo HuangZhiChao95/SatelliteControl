@@ -48,8 +48,8 @@ class SatelliteEnv(gym.Env):
             "Iw": 4.133e-4,
             "hmax":0.3,
             "omega":np.zeros(shape=(3)),
-            "theta":np.array([0.5, 0.3, 0.5])*np.pi/180,
-            "wb": np.ones(shape=(3))*0.02*np.pi/180,
+            "theta":np.ones((5000,3),dtype=np.float32)*0.5*np.pi/180,
+            "wb": np.ones((5000,3),dtype=np.float32)*0.02*np.pi/180,
             "w0":0.001097231046810,
             "C":np.eye(3),
             "tspan":1
@@ -58,6 +58,9 @@ class SatelliteEnv(gym.Env):
         self.action_space = spaces.Box(-np.ones((3))*0.1, np.ones((3))*0.1)
         self.observation_space = spaces.Box(-np.ones(8)*50, np.ones(8)*50)
         self.reward_range = spaces.Box(np.array([-10]), np.array([0]))
+        self.iteration = 0
+        self.wb_list = self._getParameter(self.defaultParameter, self.parameter, "wb")
+        self.omega_list = self._getParameter(self.defaultParameter, self.parameter, "omega")
 
 
     def _step(self, action):
@@ -89,11 +92,13 @@ class SatelliteEnv(gym.Env):
         C = self._getParameter(self.defaultParameter, self.parameter, "C")
         Iw = self._getParameter(self.defaultParameter, self.parameter, "Iw")
         self.hmax = self._getParameter(self.defaultParameter, self.parameter, "hmax")
-        self.omega = self._getParameter(self.defaultParameter, self.parameter, "omega")
         theta = self._getParameter(self.defaultParameter, self.parameter, "theta")
-        self.wb = self._getParameter(self.defaultParameter, self.parameter, "wb")
         self.w0 = self._getParameter(self.defaultParameter, self.parameter, "w0")
         self.tsapn = self._getParameter(self.defaultParameter, self.parameter, "tspan")
+
+        self.omega = self.omega_list[self.iteration, :]
+        self.wb = self.wb_list[self.iteration, :]
+        self.iteration = (self.iteration+1) % len(self.omega_list)
 
         self.Cw = C*Iw
         self.Cw_inverse = np.linalg.inv(self.Cw)
