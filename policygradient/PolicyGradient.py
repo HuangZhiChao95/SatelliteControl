@@ -11,6 +11,8 @@ class PolicyGradient:
         self.action = tf.placeholder(dtype=tf.float32, shape=[None, output_dim])/amp;
         self.lr_rate = tf.placeholder(dtype=tf.float32)
         self.std = tf.placeholder(dtype=tf.float32)
+        self.pd_action = tf.placeholder(dtype=tf.float32, shape=[None, output_dim])
+
         self.gamma=gamma
 
         network = tl.layers.InputLayer(self.input)
@@ -28,6 +30,8 @@ class PolicyGradient:
         log_prob = tf.reduce_prod(tf.squeeze(normal_dist.log_prob(self.action)), axis=1)
         self.loss = tf.reduce_sum(tf.multiply(-log_prob, self.target), axis=0) / batch_size
         self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss, var_list=train_params)
+        self.loss_pd = tf.nn.l2_loss(self.pd-self.mean, name="loss_pd") / batch_size
+        self.train_pd_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss_pd, var_list=train_params)
         tf.summary.scalar('loss', self.loss)
 
         self.action_list = list()
@@ -41,6 +45,15 @@ class PolicyGradient:
 
     def clearMem(self):
         self._clearMem()
+
+    def imitation_learn(self, states, actions, lr_rate, sess):
+        feed_dict = {
+            self.input: states,
+            self.action: actions,
+            self.lr_rate: lr_rate
+        }
+        _, loss = sess.run([self.train_pd_op, self.loss_pd], feed_dict = feed_dict)
+        return loss
 
     def _memorize(self, action, state):
         self.action_list.append(action.copy())

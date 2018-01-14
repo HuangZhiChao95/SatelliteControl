@@ -62,6 +62,8 @@ for i in range(processnum):
 
 if method == "PolicyGradient":
     agent = PolicyGradient(init_std=1e-4)
+
+
     reward_list = list()
     rewards = np.zeros(processnum * batchsize, dtype=np.float32)
     states = np.zeros([processnum * batchsize, 7], dtype=np.float32)
@@ -72,6 +74,18 @@ if method == "PolicyGradient":
     test_env = SatelliteEnv(p_testenv)
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
+        pd_lr_rate = 2e-2;
+        for i in range(10000):
+            q1 = np.random.rand(batchsize, 3) * 0.3
+            q0 = np.sqrt(1 - np.sum(np.square(q1), axis=1))
+            w = np.random.rand(batchsize, 3) * 0.01
+            pd_actions = -0.05 * q1 - 0.05 * w
+            pd_states = np.concatenate((q0, q1, w), axis=1)
+            loss_pd = agent.imitation_learn(states=pd_states, actions=pd_actions, lr_rate=pd_lr_rate, sess=sess)
+            if i % 1000==0:
+                pd_lr_rate = pd_lr_rate/2
+            if i % 10 ==0:
+                print("imitate pd, step={0}, loss={1}".format(i, loss_pd))
 
         for i in range(0, iteration):
 
