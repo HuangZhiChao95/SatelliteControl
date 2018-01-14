@@ -31,7 +31,7 @@ class PolicyGradient:
         self.loss = tf.reduce_sum(tf.multiply(-log_prob, self.target), axis=0) / batch_size
         self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss, var_list=train_params)
         self.loss_pd = tf.nn.l2_loss(self.pd-self.mean, name="loss_pd") / batch_size
-        self.train_pd_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss_pd, var_list=train_params)
+        self.train_pd_op = tf.train.MomentumOptimizer(learning_rate=self.lr_rate).minimize(self.loss_pd, var_list=train_params)
         tf.summary.scalar('loss', self.loss)
 
         self.action_list = list()

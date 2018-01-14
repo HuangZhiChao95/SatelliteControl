@@ -27,7 +27,7 @@ class SatelliteEnv(gym.Env):
         omega = y[7:10]
         dw = np.dot(self.Ib_inverse,T-np.cross(w,np.dot(self.Ib,w)+np.dot(self.Cw,omega)))
         domega = -np.dot(self.Cw_inverse,T)
-        return np.concatenate((dq, dw, domega))
+        return np.concatenate((dq, dw, domega, y[0:4], ))
 
     def _wToqhat(self,q,w,w0):
         Abo = np.array([[q[0]**2+q[1]**2-q[2]**2-q[3]**2, 2*(q[1]*q[2]+q[0]*q[3]), 2*(q[1]*q[3]+q[0]*q[2])],
@@ -66,14 +66,15 @@ class SatelliteEnv(gym.Env):
 
     def _step(self, action):
         t = np.linspace(0, self.tsapn, 10)
-        y_init = np.concatenate((self.q, self.wb, self.omega))
+        y_init = np.concatenate((self.q, self.wb, self.omega, self.sq))
         states = odeint(self._odefun, y_init, t, args=(action,), printmessg=True)
         for state in states[:-1]:
             self.state_list.append(state)
 
-        self.q = states[-1,0:4]
+        self.q = states[-1, 0:4]
         self.wb = states[-1, 4:7]
-        self.omega = states[-1, 7:]
+        self.omega = states[-1, 7:10]
+        self.sq = states[-1, 10:14]
 
         tmp = self.q - [1,0,0,0]
         reward =  (-10 * np.dot(tmp,tmp) - np.dot(action,action)*20)*exp(self.step_count*self.tsapn/500)
@@ -110,6 +111,7 @@ class SatelliteEnv(gym.Env):
         self.step_count = 0
         self.q = self._eulerToq(theta)
         self.state_list = list()
+        self.sq = np.zeros(4, dtype=np.float32)
         return np.concatenate((self.q, self.wb))
 
     def _render(self, mode='human', close=False):

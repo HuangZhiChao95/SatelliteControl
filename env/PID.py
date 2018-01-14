@@ -2,7 +2,7 @@ from env.SatelliteEnv import SatelliteEnv
 import matplotlib.pyplot as plt
 import numpy as np
 
-env = SatelliteEnv({"theta":np.array([0.6,0.6,0.6]),"tspan":1})
+env = SatelliteEnv({"theta":np.array([[0.6,0.6,0.6]]),"tspan":1})
 state = env.reset()
 
 for i in range(0,10000):
