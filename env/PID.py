@@ -2,11 +2,12 @@ from env.SatelliteEnv import SatelliteEnv
 import matplotlib.pyplot as plt
 import numpy as np
 
-env = SatelliteEnv({"theta":np.array([[0.6,0.6,0.6]]),"tspan":1})
+env = SatelliteEnv({"theta":np.array([[1,1,1]])/180.0,"tspan":1})
 state = env.reset()
 
-for i in range(0,10000):
-    action = -0.5*state[1:4]-0.5*state[4:7]
+for i in range(0,2000):
+    action = -0.5*state[1:4]-5*state[4:7]-0.002*state[8:]
+    print(state)
     state, reward, done,_ = env.step(action)
     print(np.dot(action,action)/0.09)
     print("step={0} reward={1}".format(i,reward))

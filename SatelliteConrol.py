@@ -61,7 +61,7 @@ for i in range(processnum):
 
 
 if method == "PolicyGradient":
-    agent = PolicyGradient(init_std=1e-4)
+    agent = PolicyGradient(init_std=1e-2)
 
 
     reward_list = list()
