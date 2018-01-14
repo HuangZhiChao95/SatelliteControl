@@ -69,20 +69,21 @@ if method == "PolicyGradient":
     states = np.zeros([processnum * batchsize, 7], dtype=np.float32)
     dones = np.ndarray(processnum * batchsize, dtype=np.bool)
     saver = tf.train.Saver()
-    lr_rate = 1e-3
+    lr_rate = 5e-3
     summary_writer = tf.summary.FileWriter('./log')
     test_env = SatelliteEnv(p_testenv)
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
-        pd_lr_rate = 2e-2;
-        for i in range(10000):
-            q1 = np.random.rand(batchsize, 3) * 0.3
+        pd_lr_rate = 40;
+        for i in range(100000):
+            q1 = np.random.rand(batchsize, 3) * 0.3#np.ones([batchsize,3])*0.3#
             q0 = np.sqrt(1 - np.sum(np.square(q1), axis=1))
-            w = np.random.rand(batchsize, 3) * 0.01
-            pd_actions = -0.05 * q1 - 0.05 * w
+            q0 = q0[:, np.newaxis]
+            w = np.random.rand(batchsize, 3) * 0.01 #np.ones([batchsize,3])*0.01#
+            pd_actions = -0.5 * q1 - 0.5 * w
             pd_states = np.concatenate((q0, q1, w), axis=1)
             loss_pd = agent.imitation_learn(states=pd_states, actions=pd_actions, lr_rate=pd_lr_rate, sess=sess)
-            if i % 1000==0:
+            if i % 10000==0:
                 pd_lr_rate = pd_lr_rate/2
             if i % 10 ==0:
                 print("imitate pd, step={0}, loss={1}".format(i, loss_pd))
