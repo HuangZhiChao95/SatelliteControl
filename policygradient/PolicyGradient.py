@@ -52,7 +52,7 @@ class PolicyGradient:
             self.pd_action: actions,
             self.lr_rate: lr_rate
         }
-        _, loss, mean = sess.run([self.train_pd_op, self.loss_pd, self.oplist], feed_dict = feed_dict)
+        _, loss = sess.run([self.train_pd_op, self.loss_pd], feed_dict = feed_dict)
         #print(actions-mean)
         return loss
 

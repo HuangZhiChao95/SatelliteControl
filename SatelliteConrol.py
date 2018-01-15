@@ -50,7 +50,7 @@ for i in range(processnum):
     lockenv = Semaphore(0)
     lockmain = Semaphore(0)
     q = Queue()
-    process = Process(target=envblock, args=(batchsize, penv, lockenv, lockmain, q, 10))
+    process = Process(target=envblock, args=(batchsize, penv, lockenv, lockmain, q, 11))
 
     processes.append(process)
     lockenvs.append(lockenv)
@@ -61,12 +61,12 @@ for i in range(processnum):
 
 
 if method == "PolicyGradient":
-    agent = PolicyGradient(init_std=1e-2, input_dim=10)
+    agent = PolicyGradient(init_std=1e-2, input_dim=11)
 
 
     reward_list = list()
     rewards = np.zeros(processnum * batchsize, dtype=np.float32)
-    states = np.zeros([processnum * batchsize, 10], dtype=np.float32)
+    states = np.zeros([processnum * batchsize, 11], dtype=np.float32)
     dones = np.ndarray(processnum * batchsize, dtype=np.bool)
     saver = tf.train.Saver()
     lr_rate = 5e-3
@@ -74,17 +74,17 @@ if method == "PolicyGradient":
     test_env = SatelliteEnv(p_testenv)
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
-        pd_lr_rate = 20
-        for i in range(10000):
+        pd_lr_rate = 40.0
+        for i in range(100000):
             q1 = np.random.rand(batchsize, 3) * 0.3#np.ones([batchsize,3])*0.3#
             q0 = np.sqrt(1 - np.sum(np.square(q1), axis=1))
             q0 = q0[:, np.newaxis]
             w = np.random.rand(batchsize, 3) * 0.01 #np.ones([batchsize,3])*0.01#
             sq = (2 * np.random.rand(batchsize, 4) - 1) * 10
-            pd_actions = -0.5 * q1 - 5 * w - 0.002 * sq[:, 1:]
+            pd_actions = -0.5 * q1 - 0.5 * w - 0.001 * sq[:, 1:]
             pd_states = np.concatenate((q0, q1, w, sq), axis=1)
             loss_pd = agent.imitation_learn(states=pd_states, actions=pd_actions, lr_rate=pd_lr_rate, sess=sess)
-            if i % 2000==0:
+            if i % 10000==0:
                 pd_lr_rate = pd_lr_rate/2
             if i % 100 ==0:
                 print("imitate pd, step={0}, loss={1}".format(i, loss_pd))
