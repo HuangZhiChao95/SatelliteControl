@@ -4,6 +4,7 @@ import os
 from env.EnvBlock import envblock
 from env.SatelliteEnv import SatelliteEnv
 from policygradient.PolicyGradient import PolicyGradient
+from DDPG.DDPG import DDPG
 import argparse
 import numpy as np
 import tensorflow as tf
@@ -18,6 +19,7 @@ parser.add_argument("--iteration", type=int, default=10000)
 parser.add_argument("--tspan", type=float, default=0.5)
 parser.add_argument("--batchsize", type=int, default=16)
 parser.add_argument("--processnum", type=int, default=4)
+parser.add_argument("--batchsize_sample", type=int, default=4)
 parser.add_argument("savename")
 
 args = parser.parse_args()
@@ -163,3 +165,91 @@ if method == "PolicyGradient":
             summary_writer.add_summary(summary_str, i)
             print("iteration{0} loss={3}, target={1}, step={2}".format(i, np.mean(target), k, loss))
             reward_list.clear()
+
+if method == "DDPG":
+    agent = DDPG(tau=0.9999, replaysize=10000, batch_size=256, state_dim=11)
+    rewards = np.zeros(processnum * batchsize, dtype=np.float32)
+    states = np.zeros([processnum * batchsize, 11], dtype=np.float32)
+    next_states = np.zeros([processnum * batchsize, 11], dtype=np.float32)
+    dones = np.ndarray(processnum * batchsize, dtype=np.bool)
+    saver = tf.train.Saver()
+    lr_rate = 1e-3
+    summary_writer = tf.summary.FileWriter('./log')
+    test_env = SatelliteEnv(penv)
+    with tf.Session(config=config) as sess:
+        summary_op = tf.summary.merge_all()
+        sess.run(tf.global_variables_initializer())
+        for i in range(0, iteration):
+
+            # save record
+            if i % 10 == 0 and i>0:
+                saver.save(sess, "./model/{0}.ckpt".format(args.savename), global_step=i)
+                env = test_env
+                action_list = []
+                state_list = []
+                reward_list = []
+                state = env.reset()
+                state = state[np.newaxis, :]
+
+                for k in range(0, int(2000 / args.tspan)):
+                    action = agent.predict(state, sess).flat
+                    state, reward, done, __ = env.step(action)
+                    state_list.append(state.copy())
+                    state = state[np.newaxis, :]
+                    action_list.append(action.copy())
+                    reward_list.append(reward.copy() / exp(k * args.tspan / 500))
+
+                result = {
+                    "state": np.array(state_list),
+                    "action": np.array(action_list),
+                    "reward": np.array(reward_list)
+                }
+
+                if not os.path.exists("record"):
+                    os.mkdir("record")
+
+                np.save("./record/{1}_{0}".format(i, args.savename), np.array(result))
+                reward_list.clear()
+
+            # reset
+            for j in range(processnum):
+                queues[j].put("reset")
+                lockenvs[j].release()
+
+            for j in range(processnum):
+                lockmains[j].acquire()
+
+            for j in range(processnum):
+                states[batchsize * j:(j + 1) * batchsize, :] = queues[j].get()
+
+            Done = False
+            k = 0
+            while not Done:
+                actions = agent.predict_noise(states, sess)
+                flag = True
+                for j in range(processnum):
+                    queues[j].put(actions[batchsize * j:(j + 1) * batchsize, :])
+                    lockenvs[j].release()
+
+                for j in range(processnum):
+                    lockmains[j].acquire()
+
+                for j in range(processnum):
+                    state_block, reward_block, done_block = queues[j].get()
+                    next_states[batchsize * j:(j + 1) * batchsize, :] = state_block
+                    rewards[batchsize * j:(j + 1) * batchsize] = reward_block
+                    dones[batchsize * j:(j + 1) * batchsize] = done_block
+
+                Done = np.all(dones)
+                agent.store_sample(states, next_states, actions, rewards)
+                loss, Q = agent.update(lr_rate=lr_rate, sess=sess)
+
+                if k % 100 == 0:
+                    print("iteration={0} policy_loss={1} Q_loss={2}".format(k, loss, Q))
+                k = k + 1
+
+            if i % 500 == 0:
+                lr_rate = lr_rate / 2
+
+            summary_str = sess.run(summary_op)
+            summary_writer.add_summary(summary_str, i)
