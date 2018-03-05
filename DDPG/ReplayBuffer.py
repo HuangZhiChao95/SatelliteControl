@@ -35,6 +35,3 @@ class ReplayBuffer:
             t3[i] = tmp[2]
             t4[i] = tmp[3]
         return t1,t2,t3,t4
-
-
-

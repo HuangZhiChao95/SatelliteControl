@@ -4,6 +4,12 @@
 #pyc
 *.pyc
 
+#npy
+*.npy
+
+#ckpt
+*.ckpt*
+
 #data model log
 log/*
 model/*

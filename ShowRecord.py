@@ -17,6 +17,8 @@ plt.figure(1)
 plt.subplot(231)
 plt.plot(states[:, 0, 0])
 plt.title("q0")
+# plt.xlabel(u"time")
+# plt.ylabel(u"q0")
 
 plt.subplot(232)
 plt.title("q1-q3")

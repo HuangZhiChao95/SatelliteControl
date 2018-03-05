@@ -34,7 +34,16 @@ config.log_device_placement = False
 config.gpu_options.allow_growth = True
 
 states = list()
-penv = {"tspan": args.tspan, "theta": np.array([0.5, 0.5, 0.3])}
+penv = {
+    "tspan": args.tspan,
+    "theta": np.matmul(2*np.random.rand(5000,3)-1, np.diag([0.5, 0.5, 0.3])),
+    "wb":np.matmul(2*np.random.rand(5000,3)-1, np.diag([0.001,0.001,0.001]))
+}
+p_testenv = {
+    "tspan": args.tspan,
+    "theta": np.array([[0.5, 0.5, 0.3]]),
+    "wb":np.ones((1, 3))*0.02*np.pi/180
+}
 processes = list()
 queues = list()
 lockenvs= list()
@@ -44,7 +53,7 @@ for i in range(processnum):
     lockenv = Semaphore(0)
     lockmain = Semaphore(0)
     q = Queue()
-    process = Process(target=envblock, args=(batchsize, penv, lockenv, lockmain, q))
+    process = Process(target=envblock, args=(batchsize, penv, lockenv, lockmain, q, 11))
 
     processes.append(process)
     lockenvs.append(lockenv)
@@ -55,17 +64,33 @@ for i in range(processnum):
 
 
 if method == "PolicyGradient":
-    agent = PolicyGradient(init_std=1e-4)
+    agent = PolicyGradient(init_std=1e-2, input_dim=11)
+
+
     reward_list = list()
     rewards = np.zeros(processnum * batchsize, dtype=np.float32)
-    states = np.zeros([processnum * batchsize, 7], dtype=np.float32)
+    states = np.zeros([processnum * batchsize, 11], dtype=np.float32)
     dones = np.ndarray(processnum * batchsize, dtype=np.bool)
     saver = tf.train.Saver()
-    lr_rate = 1e-3
+    lr_rate = 5e-3
     summary_writer = tf.summary.FileWriter('./log')
-    test_env = SatelliteEnv(penv)
+    test_env = SatelliteEnv(p_testenv)
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
+        pd_lr_rate = 40.0
+        for i in range(100000):
+            q1 = np.random.rand(batchsize, 3) * 0.3#np.ones([batchsize,3])*0.3#
+            q0 = np.sqrt(1 - np.sum(np.square(q1), axis=1))
+            q0 = q0[:, np.newaxis]
+            w = np.random.rand(batchsize, 3) * 0.01 #np.ones([batchsize,3])*0.01#
+            sq = (2 * np.random.rand(batchsize, 4) - 1) * 10
+            pd_actions = -0.5 * q1 - 0.5 * w - 0.001 * sq[:, 1:]
+            pd_states = np.concatenate((q0, q1, w, sq), axis=1)
+            loss_pd = agent.imitation_learn(states=pd_states, actions=pd_actions, lr_rate=pd_lr_rate, sess=sess)
+            if i % 10000==0:
+                pd_lr_rate = pd_lr_rate/2
+            if i % 100 ==0:
+                print("imitate pd, step={0}, loss={1}".format(i, loss_pd))
 
         for i in range(0, iteration):
 
@@ -143,10 +168,10 @@ if method == "PolicyGradient":
             reward_list.clear()
 
 if method == "DDPG":
-    agent = DDPG(tau=0.9999, replaysize=10000, batch_size=256)
+    agent = DDPG(tau=0.9999, replaysize=10000, batch_size=256, state_dim=11)
     rewards = np.zeros(processnum * batchsize, dtype=np.float32)
-    states = np.zeros([processnum * batchsize, 7], dtype=np.float32)
-    next_states = np.zeros([processnum * batchsize, 7], dtype=np.float32)
+    states = np.zeros([processnum * batchsize, 11], dtype=np.float32)
+    next_states = np.zeros([processnum * batchsize, 11], dtype=np.float32)
     dones = np.ndarray(processnum * batchsize, dtype=np.bool)
     saver = tf.train.Saver()
     lr_rate = 1e-3
@@ -158,7 +183,7 @@ if method == "DDPG":
         for i in range(0, iteration):
 
             # save record
-            if i % 100 == 0:
+            if i % 10 == 0 and i>0:
                 saver.save(sess, "./model/{0}.ckpt".format(args.savename), global_step=i)
                 env = test_env
                 action_list = []
@@ -168,12 +193,12 @@ if method == "DDPG":
                 state = state[np.newaxis, :]
 
                 for k in range(0, int(2000 / args.tspan)):
-                    action = agent.predict(state, sess).flat()
+                    action = agent.predict(state, sess).flat
                     state, reward, done, __ = env.step(action)
-                    state_list.append(state)
+                    state_list.append(state.copy())
                     state = state[np.newaxis, :]
-                    action_list.append(action)
-                    reward_list.append(reward / exp(k * args.tspan / 500))
+                    action_list.append(action.copy())
+                    reward_list.append(reward.copy() / exp(k * args.tspan / 500))
 
                 result = {
                     "state": np.array(state_list),
@@ -221,7 +246,7 @@ if method == "DDPG":
                 loss, Q = agent.update(lr_rate=lr_rate, sess=sess)
 
                 if k % 100 == 0:
-                    print("iteration={0} policy_loss={2} Q_loss={3}".format(k, loss, Q))
+                    print("iteration={0} policy_loss={1} Q_loss={2}".format(k, loss, Q))
                 k = k + 1
 
             if i % 500 == 0:

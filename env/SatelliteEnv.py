@@ -27,7 +27,7 @@ class SatelliteEnv(gym.Env):
         omega = y[7:10]
         dw = np.dot(self.Ib_inverse,T-np.cross(w,np.dot(self.Ib,w)+np.dot(self.Cw,omega)))
         domega = -np.dot(self.Cw_inverse,T)
-        return np.concatenate((dq, dw, domega))
+        return np.concatenate((dq, dw, domega, y[0:4]))
 
     def _wToqhat(self,q,w,w0):
         Abo = np.array([[q[0]**2+q[1]**2-q[2]**2-q[3]**2, 2*(q[1]*q[2]+q[0]*q[3]), 2*(q[1]*q[3]+q[0]*q[2])],
@@ -48,8 +48,8 @@ class SatelliteEnv(gym.Env):
             "Iw": 4.133e-4,
             "hmax":0.3,
             "omega":np.zeros(shape=(3)),
-            "theta":np.array([0.5, 0.3, 0.5])*np.pi/180,
-            "wb": np.ones(shape=(3))*0.02*np.pi/180,
+            "theta":np.ones((5000,3),dtype=np.float32)*0.5*np.pi/180,
+            "wb": np.ones((5000,3),dtype=np.float32)*0.02*np.pi/180,
             "w0":0.001097231046810,
             "C":np.eye(3),
             "tspan":1
@@ -58,18 +58,23 @@ class SatelliteEnv(gym.Env):
         self.action_space = spaces.Box(-np.ones((3))*0.1, np.ones((3))*0.1)
         self.observation_space = spaces.Box(-np.ones(8)*50, np.ones(8)*50)
         self.reward_range = spaces.Box(np.array([-10]), np.array([0]))
+        self.iteration = 0
+        self.wb_list = self._getParameter(self.defaultParameter, self.parameter, "wb")
+        self.theta_list = self._getParameter(self.defaultParameter, self.parameter, "theta")
+
 
 
     def _step(self, action):
         t = np.linspace(0, self.tsapn, 10)
-        y_init = np.concatenate((self.q, self.wb, self.omega))
+        y_init = np.concatenate((self.q, self.wb, self.omega, self.sq))
         states = odeint(self._odefun, y_init, t, args=(action,), printmessg=True)
         for state in states[:-1]:
             self.state_list.append(state)
 
-        self.q = states[-1,0:4]
+        self.q = states[-1, 0:4]
         self.wb = states[-1, 4:7]
-        self.omega = states[-1, 7:]
+        self.omega = states[-1, 7:10]
+        self.sq = states[-1, 10:14]
 
         tmp = self.q - [1,0,0,0]
         reward =  (-10 * np.dot(tmp,tmp) - np.dot(action,action)*20)*exp(self.step_count*self.tsapn/500)
@@ -78,7 +83,7 @@ class SatelliteEnv(gym.Env):
         if self.step_count*self.tsapn>1000:
             done = True
             
-        return np.concatenate((self.q, self.wb)), reward, done, { }
+        return np.concatenate((self.q, self.wb, self.sq)), reward, done, { }
 
 
     # def _seed(self, seed = None):
@@ -91,9 +96,12 @@ class SatelliteEnv(gym.Env):
         self.hmax = self._getParameter(self.defaultParameter, self.parameter, "hmax")
         self.omega = self._getParameter(self.defaultParameter, self.parameter, "omega")
         theta = self._getParameter(self.defaultParameter, self.parameter, "theta")
-        self.wb = self._getParameter(self.defaultParameter, self.parameter, "wb")
         self.w0 = self._getParameter(self.defaultParameter, self.parameter, "w0")
         self.tsapn = self._getParameter(self.defaultParameter, self.parameter, "tspan")
+
+        theta = self.theta_list[self.iteration, :]
+        self.wb = self.wb_list[self.iteration, :]
+        self.iteration = (self.iteration+1) % len(self.theta_list)
 
         self.Cw = C*Iw
         self.Cw_inverse = np.linalg.inv(self.Cw)
@@ -103,7 +111,8 @@ class SatelliteEnv(gym.Env):
         self.step_count = 0
         self.q = self._eulerToq(theta)
         self.state_list = list()
-        return np.concatenate((self.q, self.wb))
+        self.sq = np.zeros(4, dtype=np.float32)
+        return np.concatenate((self.q, self.wb, self.sq))
 
     def _render(self, mode='human', close=False):
         pass
