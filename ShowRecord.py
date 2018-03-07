@@ -15,7 +15,7 @@ rewards = record["reward"]
 
 plt.figure(1)
 plt.subplot(231)
-plt.plot(states[:, 0, 0])
+plt.plot(states[:,  0])
 plt.title("q0")
 # plt.xlabel(u"time")
 # plt.ylabel(u"q0")
@@ -23,12 +23,12 @@ plt.title("q0")
 plt.subplot(232)
 plt.title("q1-q3")
 for i in range(1,4):
-    plt.plot(states[:, 0, i])
+    plt.plot(states[:, i])
 
 plt.subplot(233)
 plt.title("v1-v3")
 for i in range(4,7):
-    plt.plot(states[:, 0, i])
+    plt.plot(states[:,  i])
 
 plt.subplot(234)
 plt.title("action1-action3")

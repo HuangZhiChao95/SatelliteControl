@@ -18,8 +18,8 @@ parser.add_argument("--method", help="Method for Reinforcement Learning, current
                     default="PolicyGradient")
 parser.add_argument("--iteration", type=int, default=10000)
 parser.add_argument("--tspan", type=float, default=0.5)
-parser.add_argument("--batchsize", type=int, default=16)
-parser.add_argument("--processnum", type=int, default=4)
+parser.add_argument("--batchsize", type=int, default=4)
+parser.add_argument("--processnum", type=int, default=2)
 parser.add_argument("--batchsize_sample", type=int, default=4)
 parser.add_argument("savename")
 
@@ -174,7 +174,7 @@ if method == "DDPG":
     next_states = np.zeros([processnum * batchsize, 11], dtype=np.float32)
     dones = np.ndarray(processnum * batchsize, dtype=np.bool)
     saver = tf.train.Saver()
-    lr_rate = 1e-3
+    lr_rate = 1e-4
     summary_writer = tf.summary.FileWriter('./log')
     test_env = SatelliteEnv(penv)
     with tf.Session(config=config) as sess:
@@ -183,7 +183,8 @@ if method == "DDPG":
         for i in range(0, iteration):
 
             # save record
-            if i % 10 == 0 and i>0:
+            if i % 100 == 0:
+                print("record")
                 saver.save(sess, "./model/{0}.ckpt".format(args.savename), global_step=i)
                 env = test_env
                 action_list = []
@@ -198,7 +199,7 @@ if method == "DDPG":
                     state_list.append(state.copy())
                     state = state[np.newaxis, :]
                     action_list.append(action.copy())
-                    reward_list.append(reward.copy() / exp(k * args.tspan / 500))
+                    reward_list.append(reward.copy()) #/ exp(k * args.tspan / 500))
 
                 result = {
                     "state": np.array(state_list),
@@ -243,14 +244,15 @@ if method == "DDPG":
 
                 Done = np.all(dones)
                 agent.store_sample(states, next_states, actions, rewards)
-                loss, Q = agent.update(lr_rate=lr_rate, sess=sess)
+                loss, Q, fitQ, r = agent.update(lr_rate=lr_rate, sess=sess)
 
                 if k % 100 == 0:
-                    print("iteration={0} policy_loss={1} Q_loss={2}".format(k, loss, Q))
+                    print("iteration={0} fit_loss={1} Q_value={2} fitQ={3} r={4}".format(k, loss, Q, np.mean(fitQ), np.mean(r, 0)))
                 k = k + 1
 
             if i % 500 == 0:
                 lr_rate = lr_rate / 2
+            print(i)
 
-            summary_str = sess.run(summary_op)
-            summary_writer.add_summary(summary_str, i)
+            #summary_str = sess.run(summary_op)
+            #summary_writer.add_summary(summary_str, i)
