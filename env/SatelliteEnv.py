@@ -75,14 +75,11 @@ class SatelliteEnv(gym.Env):
         self.wb = states[-1, 4:7]
         self.omega = states[-1, 7:10]
         self.sq = states[-1, 10:14]
+        #print(states)
 
         tmp = self.q - [1,0,0,0]
         #reward =  (-10 * np.dot(tmp,tmp) - np.dot(action,action)*20)#*exp(self.step_count*self.tsapn/500)
         reward =  (- np.sum(np.abs(tmp)) - np.sum(np.abs(action)))
-        if reward<-0.4:
-            reward = -1
-        else:
-            reward = reward+1
         done = False
         self.step_count = self.step_count+1
         if (self.step_count*self.tsapn>1000 or reward<-0.5) and self.step_count*self.tsapn>500:

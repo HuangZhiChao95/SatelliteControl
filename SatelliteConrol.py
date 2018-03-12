@@ -5,6 +5,7 @@ from env.EnvBlock import envblock
 from env.SatelliteEnv import SatelliteEnv
 from policygradient.PolicyGradient import PolicyGradient
 from DDPG.DDPG import DDPG
+from LQR.Model import Model
 
 import argparse
 import numpy as np
@@ -310,3 +311,7 @@ if method == "DDPG":
             print(k)
             if i % 500 == 0:
                 lr_rate = lr_rate / 2
+
+if method=="LQR":
+    model = Model(init_std=1e-2)
+    model.run(1e-3,100000)
