@@ -4,8 +4,8 @@ from DDPG.ReplayBuffer import ReplayBuffer
 
 class DDPG:
 
-    def __init__(self, policy_unit=[20, 20], value_unit=[20, 20], state_dim=7, action_dim=3, policy_init_std=1e-3,
-                 value_init_std=1e-2, gamma=0.99, tau=0.99, replaysize=100000, batch_size=64):
+    def __init__(self, policy_unit=[50, 50], value_unit=[300, 400], state_dim=7, action_dim=3, policy_init_std=1e-2,
+                 value_init_std=1e-1, gamma=0.99, tau=0.01, replaysize=100000, batch_size=64):
         amp = 1e-3
         self.debug = list()
 
@@ -16,6 +16,7 @@ class DDPG:
         self.lr_rate = tf.placeholder(dtype=tf.float32, name="lr_rate")
         self.flag_update_value = tf.placeholder(dtype=tf.bool, name="flag_update_value")
         self.phase_train = tf.placeholder(dtype=tf.bool, name="phase_train")
+        self.action_pd = tf.placeholder(dtype=tf.float32, shape=[None, action_dim], name="action_pd")
 
         self.gamma = gamma
         self.tau = tau
@@ -45,8 +46,8 @@ class DDPG:
                 source_policy, target_policy = self._double_denselayer(source_policy, target_policy, policy_unit[i],
                                                                        policy_unit[i + 1], policy_init_std, "policy", act)
 
-        self.source_action = tf.clip_by_value(source_policy, -1e-3, 1e-3)
-        self.target_action = tf.clip_by_value(target_policy, -1e-3, 1e-3)
+        self.source_action = tf.clip_by_value(source_policy, -1e-1, 1e-1)
+        self.target_action = tf.clip_by_value(target_policy, -1e-1, 1e-1)
         self.source_action_norm = self._input_batch_norm(self.source_action, action_dim)
         self.target_action_norm = self._input_batch_norm(self.target_action, action_dim)
 
@@ -56,17 +57,24 @@ class DDPG:
         for i in range(0, len(value_unit) - 1):
             if i == len(value_unit) - 2:
                 act = tf.identity
+                bias = True
             else:
-                act = tf.tanh
+                act = tf.nn.relu
+                bias = True
             with tf.name_scope("value_fc{0}".format(i + 1)):
                 source_value, target_value = self._double_denselayer(source_value, target_value, value_unit[i],
-                                                                     value_unit[i + 1], value_init_std, "value", act, True)
+                                                                     value_unit[i + 1], value_init_std, "value", act, bias)
 
         self.fitQ = self.reward + self.gamma * target_value
-        self.loss = tf.reduce_mean(tf.square(self.fitQ - source_value))
+        self.debug = target_value
+        self.loss = tf.reduce_mean(tf.abs(self.fitQ - source_value))
+        self.Q_source=source_value
         self.Q = tf.reduce_mean(source_value)
         self.train_policy = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(-self.Q, var_list=tf.get_collection("policy"))
         self.train_value = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss, var_list=tf.get_collection("value"))
+        
+        self.action_pd_loss = tf.reduce_mean(tf.abs(self.source_action-self.action_pd))
+        self.train_action_pd = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.action_pd_loss, var_list=tf.get_collection("policy"))
 
 
     # def _input_batch_norm_state(self, dim):
@@ -104,6 +112,7 @@ class DDPG:
     #     return tf.nn.batch_normalization(self.action, mean, var, beta, gamma, 1e-4)
 
     def _input_batch_norm(self, input, dim):
+        return tf.identity(input)
         batch_mean, batch_var = tf.nn.moments(input, [0])
         ema = tf.train.ExponentialMovingAverage(decay=0.99)
 
@@ -130,18 +139,17 @@ class DDPG:
             source = activation(tf.matmul(source, w_source), name="source")
         tf.summary.histogram(values=w_source, name="source_weight")
         tf.summary.histogram(values=b_source, name="source_bias")
-        tf.summary.histogram(values=source, name="source")
+        #tf.summary.histogram(values=source, name="source")
 
-        w_target = tf.Variable(w_source, name="target_weight", trainable=False)
-        b_target = tf.Variable(b_source, name="target_bias", trainable=False)
+        w_target = tf.Variable(w_source, name="target_weight")
+        b_target = tf.Variable(b_source, name="target_bias")
         if bias:
             target = activation(tf.nn.bias_add(tf.matmul(target, w_target), b_target), name="target")
         else:
             target = activation(tf.matmul(target, w_target), name="target")
         tf.summary.histogram(values=w_target, name="target_weight")
         tf.summary.histogram(values=b_target, name="target_bias")
-        tf.summary.histogram(values=target, name="target")
-
+        #tf.summary.histogram(values=target, name="target")
         self.coupleweight_op.append(tf.assign(w_target, self.tau * w_source + (1 - self.tau) * w_target))
         self.coupleweight_op.append(tf.assign(b_target, self.tau * b_source + (1 - self.tau) * b_target))
 
@@ -151,7 +159,7 @@ class DDPG:
         action = sess.run(self.target_action, feed_dict={self.next_state: state, self.phase_train: False})
         return action
 
-    def predict_noise(self, state, sess, std=1e-5):
+    def predict_noise(self, state, sess, std=1e-3):
         feed_dict = {
             self.state: state,
             self.phase_train: False
@@ -164,12 +172,12 @@ class DDPG:
         for i in range(0, len(reward)):
             self.replaybuffer.push((state[i], action[i], next_state[i], reward[i]))
 
-    def update(self, lr_rate, sess):
+    def update(self, lr_rate, sess, imitate_pd=False):
         state, action, next_state, reward = self.replaybuffer.sample(self.batch_size)
         value_feed_dict = {
             self.state: state,
             self.next_state: next_state,
-            self.lr_rate: lr_rate*5,
+            self.lr_rate: lr_rate*100,
             self.reward: reward,
             self.action: action,
             self.flag_update_value: True,
@@ -182,14 +190,29 @@ class DDPG:
             self.flag_update_value: False,
             self.phase_train: True
         }
-        _, loss, fitQ = sess.run([self.train_value, self.loss, self.fitQ], feed_dict=value_feed_dict)
-        _, Q = sess.run([self.train_policy, self.Q], feed_dict=policy_feed_dict)
+        _, loss, fitQ, Q_all = sess.run([self.train_value, self.loss, self.fitQ, self.Q_source], feed_dict=value_feed_dict)
+        #print(np.mean(debug))
+        if imitate_pd:
+            self.tau=0.005
+            feed_dict = {
+                self.state: state,
+                self.lr_rate: lr_rate*10,
+                self.action_pd: -0.5*state[:,1:4]-0.5*state[:,4:7],
+                self.flag_update_value: False,
+                self.phase_train: True
+            }
+            _, pd_loss = sess.run([self.train_action_pd, self.action_pd_loss], feed_dict = feed_dict)
+        else:
+            _, Q = sess.run([self.train_policy, self.Q], feed_dict=policy_feed_dict)
+        #Q = sess.run(self.Q, feed_dict=policy_feed_dict)
 
         # debug = sess.run([self.target_action_norm, self.target_action]+self.debug, feed_dict={self.state: state, self.action:action, self.next_state: next_state, self.phase_train:False})
         # print(debug)
 
         for op in self.coupleweight_op:
             sess.run(op)
-
-        return loss, Q, fitQ, reward
+        if imitate_pd:
+            return loss,pd_loss,fitQ,reward,Q_all
+        else:
+            return loss, Q, fitQ, reward, Q_all
 

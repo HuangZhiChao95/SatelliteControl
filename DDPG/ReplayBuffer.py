@@ -28,10 +28,11 @@ class ReplayBuffer:
         else:
             max = self._head
         for i in range(0,number):
-            index = int(random.uniform(0, max))
+            index = int(random.uniform(0, max));
             tmp = self._queue[index]
             t1[i] = tmp[0]
             t2[i] = tmp[1]
             t3[i] = tmp[2]
             t4[i] = tmp[3]
+        #print(index)
         return t1,t2,t3,t4

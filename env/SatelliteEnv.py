@@ -77,13 +77,19 @@ class SatelliteEnv(gym.Env):
         self.sq = states[-1, 10:14]
 
         tmp = self.q - [1,0,0,0]
-        reward =  (-10 * np.dot(tmp,tmp) - np.dot(action,action)*20)#*exp(self.step_count*self.tsapn/500)
+        #reward =  (-10 * np.dot(tmp,tmp) - np.dot(action,action)*20)#*exp(self.step_count*self.tsapn/500)
+        reward =  (- np.sum(np.abs(tmp)) - np.sum(np.abs(action)))
+        if reward<-0.4:
+            reward = -1
+        else:
+            reward = reward+1
         done = False
         self.step_count = self.step_count+1
-        if self.step_count*self.tsapn>1000 or reward<-1.2:
+        if (self.step_count*self.tsapn>1000 or reward<-0.5) and self.step_count*self.tsapn>500:
             done = True
             
-        return np.concatenate((self.q, self.wb, self.sq)), reward, done, { }
+        #return np.concatenate((self.q, self.wb, self.sq)), reward, done, { }
+        return np.concatenate((self.q, self.wb)), reward, done, { }
 
 
     # def _seed(self, seed = None):
@@ -112,7 +118,8 @@ class SatelliteEnv(gym.Env):
         self.q = self._eulerToq(theta)
         self.state_list = list()
         self.sq = np.zeros(4, dtype=np.float32)
-        return np.concatenate((self.q, self.wb, self.sq))
+        #return np.concatenate((self.q, self.wb, self.sq))s
+        return np.concatenate((self.q, self.wb))
 
     def _render(self, mode='human', close=False):
         pass

@@ -14,3 +14,6 @@
 log/*
 model/*
 record/*
+*.log
+.ipynb_checkpoints/
+*.ipynb

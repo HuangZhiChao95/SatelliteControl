@@ -17,9 +17,9 @@ class PolicyGradient:
 
         network = tl.layers.InputLayer(self.input)
         for i, unit_num in enumerate(hidden_unit):
-            network = tl.layers.DenseLayer(network, n_units=unit_num, act=tf.nn.tanh, W_init=tf.truncated_normal_initializer(stddev=init_std), name="dense{0}".format(i))
+            network = tl.layers.DenseLayer(network, n_units=unit_num, act=tf.nn.tanh, W_init=tf.truncated_normal_initializer(stddev=init_std),b_init=None, name="dense{0}".format(i))
 
-        mean = tl.layers.DenseLayer(network, n_units=output_dim, W_init=tf.truncated_normal_initializer(stddev=init_std), name="mean").outputs
+        mean = tl.layers.DenseLayer(network, n_units=output_dim, W_init=tf.truncated_normal_initializer(stddev=init_std),b_init=None, name="mean").outputs
         #std = tl.layers.DenseLayer(network, n_units=output_dim, act=tf.nn.softplus, W_init=tf.truncated_normal_initializer(stddev=init_std), name="std").outputs + 1e-5
         #k = tf.Variable(-0.05)
         #mean = k*(tf.slice(self.input,[0,1],[-1,3])+tf.slice(self.input,[0,4],[-1,3]))
