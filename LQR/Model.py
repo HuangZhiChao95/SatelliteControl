@@ -7,7 +7,7 @@ from env.EnvBlock import envblock
 
 class Model:
     def __init__(self, unit=[128, 256, 512, 512], state_dim=7, action_dim=3, init_std=1e-2, act=tf.nn.relu,
-                 process_num=4, batch_size=16, buffer_size=100):
+                 process_num=4, batch_size=16, buffer_size=1000):
         self.input = tf.placeholder(dtype=tf.float32, shape=[None, state_dim + action_dim], name="input")
         self.output = tf.placeholder(dtype=tf.float32, shape=[None, state_dim], name="action")
         self.lr_rate = tf.placeholder(dtype=tf.float32, name="lr_rate")
@@ -24,7 +24,8 @@ class Model:
         self.head = 0
 
         unit = [state_dim + action_dim] + unit + [state_dim]
-        network = self.input
+        with tf.name_scope("input"):
+            network = self._batch_norm(self.input, state_dim+action_dim)
 
         for i in range(0, len(unit) - 1):
             if i == len(unit) - 2:
@@ -37,6 +38,7 @@ class Model:
 
         self.next_state_model = network
         self.loss = tf.reduce_mean(tf.abs(network - self.output))
+        tf.summary.scalar(tensor=self.loss, name="loss")
         self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss)
         self._init_env()
 
@@ -74,7 +76,7 @@ class Model:
     def _batch_norm(self, input, dim):
 
         batch_mean, batch_var = tf.nn.moments(input, [0])
-        ema = tf.train.ExponentialMovingAverage(decay=0.99)
+        ema = tf.train.ExponentialMovingAverage(decay=0.5)
 
         def mean_var_with_update():
             ema_apply_op = ema.apply([batch_mean, batch_var])
@@ -86,7 +88,11 @@ class Model:
 
         beta = tf.Variable(tf.zeros(shape=[dim]))
         gamma = tf.Variable(tf.ones(shape=[dim]))
-        return tf.nn.batch_normalization(input, mean, var, beta, gamma, 1e-4)
+        tf.summary.histogram(values=ema.average(batch_mean), name="batch_mean")
+        tf.summary.histogram(values=ema.average(batch_var), name="batch_var")
+        tf.summary.histogram(values=beta, name="beta")
+        tf.summary.histogram(values=gamma, name="gamma")
+        return tf.nn.batch_normalization(input, mean, var, beta, gamma, 1e-5)
 
     def _denselayer(self, input, n_in, n_out, init_std, activation=tf.nn.relu, batch_norm=True):
 
@@ -105,25 +111,24 @@ class Model:
 
     def predict(self, state, action, sess=None):
         sess = sess or tf.get_default_session()
-        merge_op = tf.summary.merge_all()
         input = np.concatenate((state[np.newaxis, :], action[np.newaxis, :]), axis=1)
-        print(input)
-        next_state,summary_str = sess.run([self.next_state_model,merge_op], feed_dict={self.input: input, self.phase_train: True})
-        print(next_state)
+        next_state = sess.run(self.next_state_model, feed_dict={self.input: input, self.phase_train: False})
+        return next_state.squeeze()
 
-        return next_state.squeeze(),summary_str
-
-    def update(self, state, action, next_state, lr_rate, sess=None):
+    def update(self, state, action, next_state, lr_rate, sess=None, summary=False):
         sess = sess or tf.get_default_session()
-
+        merge_op = tf.summary.merge_all()
         feed_dict = {
             self.input: np.concatenate((state, action), axis=1),
             self.output: next_state,
             self.lr_rate: lr_rate,
             self.phase_train: True
         }
-        _, loss = sess.run([self.train_op, self.loss], feed_dict=feed_dict)
-        return loss
+        if summary:
+            _, loss,summary_str = sess.run([self.train_op, self.loss, merge_op], feed_dict=feed_dict)
+            return loss, summary_str
+        else:
+            sess.run(self.train_op, feed_dict=feed_dict)
 
     def _store(self, iteration):
         states = np.zeros([self.batch_size * self.process_num, self.state_dim], dtype=np.float32)
@@ -161,17 +166,21 @@ class Model:
             for i in range(iteration):
                 if i % 10 == 0:
                     self._store(10)
-                if i % 100 == 0 and i!=0:
+                if i % 10000 == 0 and i!=0:
                     state_env = self.test_env.reset()
-                    state_model = state_env.copy()
                     for j in range(2000):
                         action = np.random.randn(3) * 5e-2
+                        state_model = self.predict(state_env, action)
                         state_env, _, __, ___ = self.test_env.step(action)
-                        state_model, summary_str = self.predict(state_model, action)
-                        print("iteration={0} step={1} l1_error={2}".format(i, j, np.sum(np.abs(state_model - state_env))))
-                        summary_writer.add_summary(summary_str, j)
-                index = np.random.rand(64).astype(np.int32)
-                loss = self.update(self.states[index], self.actions[index], self.next_states[index], lr_rate)
-                print("iteration={0} loss={1}".format(i,loss))
+                        if j % 100 == 0:
+                            print("iteration={0} step={1} l1_error={2}".format(i, j, np.sum(np.abs((state_model - state_env)/state_env))))
+                index = (np.random.rand(64)*self.buffer_size).astype(np.int32)
+                if i % 100 == 0:
+                    loss,summary_str = self.update(self.states[index], self.actions[index], self.next_states[index], lr_rate, summary=True)
+                    summary_writer.add_summary(summary_str, i)
+                    print("iteration={0} loss={1}".format(i,loss))
+                else:
+                    loss = self.update(self.states[index], self.actions[index], self.next_states[index], lr_rate)
+                    
                 if i % 10000 == 0 and i != 0:
                     lr_rate = lr_rate / 2
