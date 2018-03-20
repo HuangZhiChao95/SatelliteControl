@@ -11,6 +11,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 from multiprocessing import Process, Semaphore, Queue
+from LQR.LQR import LQR
 from math import exp
 import time
 
@@ -312,5 +313,5 @@ if method == "DDPG":
                 lr_rate = lr_rate / 2
 
 if method=="LQR":
-    model = Model(init_std=1e-2)
-    model.run(1e-3,100000)
+    lqr = LQR()
+    lqr.run()
