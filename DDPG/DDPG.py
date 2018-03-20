@@ -112,9 +112,9 @@ class DDPG:
     #     return tf.nn.batch_normalization(self.action, mean, var, beta, gamma, 1e-4)
 
     def _input_batch_norm(self, input, dim):
-        return tf.identity(input)
+        #return tf.identity(input)
         batch_mean, batch_var = tf.nn.moments(input, [0])
-        ema = tf.train.ExponentialMovingAverage(decay=0.99)
+        ema = tf.train.ExponentialMovingAverage(decay=0.5)
 
         def mean_var_with_update():
             ema_apply_op = ema.apply([batch_mean, batch_var])
@@ -125,8 +125,10 @@ class DDPG:
 
         beta = tf.zeros(dim)
         gamma = tf.ones(dim)
-        self.debug.append(ema.average(batch_var))
-        return tf.nn.batch_normalization(input, mean, var, beta, gamma, 1e-8)
+        #self.debug.append(ema.average(batch_var))
+        tf.summary.histogram(values=ema.average(batch_mean), name="batch_mean")
+        tf.summary.histogram(values=ema.average(batch_var), name="batch_var")
+        return tf.nn.batch_normalization(input, mean, var, beta, gamma, 1e-4)
 
     def _double_denselayer(self, source, target, n_in, n_out, init_std, collection, activation=tf.nn.tanh, bias=False):
         w_source = tf.Variable(tf.truncated_normal([n_in, n_out], stddev=init_std), name="source_weight",

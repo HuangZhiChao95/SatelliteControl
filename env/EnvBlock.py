@@ -9,7 +9,12 @@ def envblock(n, parameter, lockself, lockmain, q, state_dim = 7):
     dones = np.ndarray(n, dtype=np.bool)
 
     for i in range(n):
-        envs.append(SatelliteEnv(parameter))
+        penv = {
+            "tspan": parameter["tspan"],
+            "theta": np.matmul(2 * np.random.rand(5000, 3) - 1, parameter["theta"]),
+            "wb": np.matmul(2 * np.random.rand(5000, 3) - 1, parameter["wb"])
+        }
+        envs.append(SatelliteEnv(penv))
 
     while True:
         lockself.acquire()

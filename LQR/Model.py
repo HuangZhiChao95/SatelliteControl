@@ -6,22 +6,26 @@ from env.EnvBlock import envblock
 
 
 class Model:
-    def __init__(self, unit=[128, 256, 512, 512], state_dim=7, action_dim=3, init_std=1e-2, act=tf.nn.relu,
-                 process_num=4, batch_size=16, buffer_size=1000):
+    def __init__(self, unit=[128,128,128,256,256], state_dim=7, action_dim=3, init_std=1e-2, act=tf.nn.relu,
+                 process_num=4, batch_size=16, buffer_size=1000, tspan=0.5):
+        self.state_dim = state_dim
+        state_dim = 6
         self.input = tf.placeholder(dtype=tf.float32, shape=[None, state_dim + action_dim], name="input")
         self.output = tf.placeholder(dtype=tf.float32, shape=[None, state_dim], name="action")
         self.lr_rate = tf.placeholder(dtype=tf.float32, name="lr_rate")
         self.phase_train = tf.placeholder(dtype=tf.bool, name="phase_train")
+        self.w_weight = tf.placeholder(dtype=tf.float32, name="w_weight")
+        self.tspan = tspan
 
         self.batch_size = batch_size
         self.process_num = process_num
-        self.state_dim = state_dim
         self.action_dim = action_dim
         self.buffer_size = buffer_size * self.process_num * self.batch_size
         self.states = np.zeros([self.buffer_size, self.state_dim], dtype=np.float32)
         self.actions = np.zeros([self.buffer_size, self.action_dim], dtype=np.float32)
         self.next_states = np.zeros([self.buffer_size, self.state_dim], dtype=np.float32)
         self.head = 0
+        self.env_iteration = 0
 
         unit = [state_dim + action_dim] + unit + [state_dim]
         with tf.name_scope("input"):
@@ -35,22 +39,41 @@ class Model:
                 batch_norm = True
             with tf.name_scope("dense{0}".format(i + 1)):
                 network = self._denselayer(network, unit[i], unit[i + 1], init_std, act, batch_norm)
-
-        self.next_state_model = network
-        self.loss = tf.reduce_mean(tf.abs(network - self.output))
+        #network = network/10
+        q = tf.slice(self.input,[0,0],[-1,3])
+        w = tf.slice(self.input,[0,3],[-1,3])
+        a = tf.slice(self.input,[0,6],[-1,3])
+        q_next = self._linear_op(w, 50, 1, "kq1") + q#self._linear_op(a, 0.05, 2, "kq2") + q
+        w_next = self._linear_op(a, 50, 1, "kw1") + w#self._linear_op(a, 0.05, 2, "kw2") + w
+        next_state_linear = tf.concat([q,w],axis=1)
+        self.next_state_model = network + next_state_linear
+        #print(self.output.shape)
+        #print(self.next_state_model.shape)
+        diff = tf.abs(self.next_state_model - self.output)
+        diff_q = tf.reduce_mean(tf.slice(diff, [0,0],[-1,3]))
+        diff_w = tf.reduce_mean(tf.slice(diff, [0,0],[-1,3]))*self.w_weight
+        self.loss = diff_q+diff_w
         tf.summary.scalar(tensor=self.loss, name="loss")
         self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss)
         self._init_env()
+    
+    def _linear_op(self, input, init, p, name):
+        k = tf.Variable(init*self.tspan, name=name)
+        tf.summary.scalar(tensor=k, name=name)
+        tmp = input
+        for i in range(p-1):
+            tmp = tf.multiply(tmp,input)
+        return k*tmp
 
-    def _init_env(self, tspan=0.5):
+    def _init_env(self):
         penv = {
-            "tspan": tspan,
-            "theta": np.matmul(2 * np.random.rand(5000, 3) - 1, np.diag([1, 1, 1])),
-            "wb": np.matmul(2 * np.random.rand(5000, 3) - 1, np.diag([0.01, 0.01, 0.01]))
+            "tspan": self.tspan,
+            "theta": np.diag([1, 1, 1]),
+            "wb": np.diag([0.01, 0.01, 0.01])
         }
         p_testenv = {
-            "tspan": tspan,
-            "theta": np.array([[0.9, 0.9, 0.4]]),
+            "tspan": self.tspan,
+            "theta": np.array([[0.1, 0.1, 0.1]]),
             "wb": np.ones((1, 3)) * 0.01 * np.pi / 180
         }
         self.test_env = SatelliteEnv(p_testenv)
@@ -74,7 +97,7 @@ class Model:
         self._store(self.buffer_size // (self.process_num * self.batch_size))
 
     def _batch_norm(self, input, dim):
-
+        return tf.identity(input)
         batch_mean, batch_var = tf.nn.moments(input, [0])
         ema = tf.train.ExponentialMovingAverage(decay=0.5)
 
@@ -122,28 +145,34 @@ class Model:
             self.input: np.concatenate((state, action), axis=1),
             self.output: next_state,
             self.lr_rate: lr_rate,
-            self.phase_train: True
+            self.phase_train: True,
+            self.w_weight:20
         }
+        #print((next_state[:,0:3]-state[:,0:3])/state[:,3:6])
+        #print((next_state[:,3:6]-state[:,3:6])/action)
         if summary:
-            _, loss,summary_str = sess.run([self.train_op, self.loss, merge_op], feed_dict=feed_dict)
+            _, loss,summary_str,debug = sess.run([self.train_op, self.loss, merge_op, self.next_state_model], feed_dict=feed_dict)
+            #print(debug)
             return loss, summary_str
         else:
             sess.run(self.train_op, feed_dict=feed_dict)
 
     def _store(self, iteration):
         states = np.zeros([self.batch_size * self.process_num, self.state_dim], dtype=np.float32)
-        for j in range(self.process_num):
-            self.queues[j].put("reset")
-            self.lockenvs[j].release()
-
-        for j in range(self.process_num):
-            self.lockmains[j].acquire()
-
-        for j in range(self.process_num):
-            states[self.batch_size * j:(j + 1) * self.batch_size, :] = self.queues[j].get()
-
         for i in range(iteration):
-            actions = np.random.randn(self.process_num * self.batch_size, self.action_dim) * 5e-2
+            if self.env_iteration==0:
+                for j in range(self.process_num):
+                    self.queues[j].put("reset")
+                    self.lockenvs[j].release()
+
+                for j in range(self.process_num):
+                    self.lockmains[j].acquire()
+
+                for j in range(self.process_num):
+                    states[self.batch_size * j:(j + 1) * self.batch_size, :] = self.queues[j].get()
+                
+            
+            actions = -0.05*states[:,1:4]-0.05*states[:,4:7]#+np.random.randn(self.process_num * self.batch_size, self.action_dim) * 1e-3
             self.actions[self.head:self.head + self.batch_size * self.process_num, :] = actions
             self.states[self.head:self.head + self.batch_size * self.process_num, :] = states
 
@@ -158,6 +187,9 @@ class Model:
                 state_block, _, __ = self.queues[j].get()
                 self.next_states[self.head:self.head + self.batch_size, :] = state_block
                 self.head = (self.head + self.batch_size) % self.buffer_size
+                states[j*self.batch_size:(j+1)*self.batch_size,:]=state_block
+                
+            self.env_iteration = (self.env_iteration+1)%1000
 
     def run(self, lr_rate, iteration):
         summary_writer = tf.summary.FileWriter("./log")
@@ -166,21 +198,25 @@ class Model:
             for i in range(iteration):
                 if i % 10 == 0:
                     self._store(10)
-                if i % 10000 == 0 and i!=0:
+                if i % 1000 == 0 and i!=0:
                     state_env = self.test_env.reset()
                     for j in range(2000):
-                        action = np.random.randn(3) * 5e-2
-                        state_model = self.predict(state_env, action)
-                        state_env, _, __, ___ = self.test_env.step(action)
+                        action = -0.05*state_env[1:4]-0.05*state_env[4:7] #np.random.randn(3) * 1e-2
+                        state_model = self.predict(state_env[1:], action)
                         if j % 100 == 0:
-                            print("iteration={0} step={1} l1_error={2}".format(i, j, np.sum(np.abs((state_model - state_env)/state_env))))
-                index = (np.random.rand(64)*self.buffer_size).astype(np.int32)
+                            print("iteration={0} step={1} l1_error={2}".format(i, j, np.sum(np.abs((state_model - state_env[1:])/state_env[1:]))))
+                            print(state_model-state_env[1:])
+                            print(state_env[1:])
+                        state_env, _, __, ___ = self.test_env.step(action)
+                index = (np.random.rand(32)*self.buffer_size).astype(np.int32)
                 if i % 100 == 0:
-                    loss,summary_str = self.update(self.states[index], self.actions[index], self.next_states[index], lr_rate, summary=True)
+                    #print(self.states)
+                    #print((self.states[index,1:] - self.next_states[index,1:])/self.states[index,1:])
+                    loss,summary_str = self.update(self.states[index,1:], self.actions[index], self.next_states[index,1:], lr_rate, summary=True)
                     summary_writer.add_summary(summary_str, i)
                     print("iteration={0} loss={1}".format(i,loss))
                 else:
-                    loss = self.update(self.states[index], self.actions[index], self.next_states[index], lr_rate)
+                    loss = self.update(self.states[index,1:], self.actions[index], self.next_states[index,1:], lr_rate)
                     
-                if i % 10000 == 0 and i != 0:
+                if i % 4000 == 0 and i != 0:
                     lr_rate = lr_rate / 2

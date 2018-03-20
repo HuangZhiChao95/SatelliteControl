@@ -42,7 +42,7 @@ class SatelliteEnv(gym.Env):
         dq1 = np.cross(q1,wbo)+q0*wbo/2;
         return np.array([dq0,dq1[0],dq1[1],dq1[2]])
     
-    def __init__(self, parameter=dict()):
+    def __init__(self, parameter=dict(),debug=False):
         self.defaultParameter={
             "I":np.array([[12.77, -0.366, 0.158],[-0.366, 133, 0.099], [0.158, 0.099, 133]]),
             "Iw": 4.133e-4,
@@ -61,12 +61,21 @@ class SatelliteEnv(gym.Env):
         self.iteration = 0
         self.wb_list = self._getParameter(self.defaultParameter, self.parameter, "wb")
         self.theta_list = self._getParameter(self.defaultParameter, self.parameter, "theta")
+        self.debug=debug
 
 
 
     def _step(self, action):
         t = np.linspace(0, self.tsapn, 10)
         y_init = np.concatenate((self.q, self.wb, self.omega, self.sq))
+        #q = self.q
+        #Abo = np.array([[q[0]**2+q[1]**2-q[2]**2-q[3]**2, 2*(q[1]*q[2]+q[0]*q[3]), 2*(q[1]*q[3]+q[0]*q[2])],
+        #           [2*(q[1]*q[2]-q[0]*q[3]) , q[0]**2-q[1]**2+q[2]**2-q[3]**2 , 2*(q[2]*q[3]+q[0]*q[1])],
+        #           [2*(q[0]*q[3]+q[0]*q[2]) , 2*(q[2]*q[3]-q[1]*q[0] ), q[0]**2-q[1]**2-q[2]**2+q[3]**2]])
+        #woi = [0,w0,0]
+        #woib = np.dot(Abo, woi)
+        #print("start q={0} wb={1}".format(self.q,self.wb))
+        #q = self.q
         states = odeint(self._odefun, y_init, t, args=(action,), printmessg=True)
         for state in states[:-1]:
             self.state_list.append(state)
@@ -75,6 +84,13 @@ class SatelliteEnv(gym.Env):
         self.wb = states[-1, 4:7]
         self.omega = states[-1, 7:10]
         self.sq = states[-1, 10:14]
+        #Abo = np.array([[q[0]**2+q[1]**2-q[2]**2-q[3]**2, 2*(q[1]*q[2]+q[0]*q[3]), 2*(q[1]*q[3]+q[0]*q[2])],
+        #           [2*(q[1]*q[2]-q[0]*q[3]) , q[0]**2-q[1]**2+q[2]**2-q[3]**2 , 2*(q[2]*q[3]+q[0]*q[1])],
+        #           [2*(q[0]*q[3]+q[0]*q[2]) , 2*(q[2]*q[3]-q[1]*q[0] ), q[0]**2-q[1]**2-q[2]**2+q[3]**2]])
+        #woi = [0,w0,0]
+        #woib = np.dot(Abo, woi)
+        #print("end q={0}".format(self.q))
+        #print("rate={0}".format((self.q[1:4]-q[1:4])/self.wb))
         #print(states)
 
         tmp = self.q - [1,0,0,0]

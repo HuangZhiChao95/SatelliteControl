@@ -25,7 +25,6 @@ parser.add_argument("--batchsize_sample", type=int, default=256)
 parser.add_argument("savename")
 
 args = parser.parse_args()
-
 iteration = args.iteration
 method = args.method
 batchsize = args.batchsize
@@ -244,7 +243,7 @@ if method == "DDPG":
             Done = False
             k = 0
             while not Done:
-                if i==10 and k % 10==0:
+                if i<0 and k % 10==0:
                     print("record")
                     saver.save(sess, "./model/{0}.ckpt".format(args.savename), global_step=i)
                     env = test_env
@@ -277,7 +276,7 @@ if method == "DDPG":
                     np.save("./record/{1}_{0}_{2}".format(i, args.savename, k), np.array(result))
                     reward_list.clear()                
                     
-                if i<10:
+                if i<0:
                     actions = - 0.5 * states[:,1:4]-0.5*states[:,4:7]
                 else:
                     actions = agent.predict_noise(states, sess)
@@ -297,7 +296,7 @@ if method == "DDPG":
                 Done = np.all(dones)                  
                 agent.store_sample(states.copy(), next_states.copy(), actions.copy(), rewards.copy())
                 states = next_states
-                if i<10:
+                if i<0:
                     loss, pd_loss, fitQ, r,Q_all = agent.update(lr_rate=lr_rate, sess=sess, imitate_pd=True)
                     if k % 100 == 0:
                         print("iteration={0} step={5} fit_loss={1} pd_loss={2} fitQ={3} r={4}".format(i, loss, pd_loss, np.mean(fitQ), np.mean(r), k))
