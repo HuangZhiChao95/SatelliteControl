@@ -6,7 +6,7 @@ env = SatelliteEnv({"theta":np.array([[1,1,1]]),"tspan":1})
 state = env.reset()
 
 for i in range(0,1000):
-    action = -0.5*state[1:4]-5*state[4:7]-0.002*state[8:]
+    action = -0.5*state[0:3]-5*state[3:6]
     state, reward, done,_ = env.step(action)
     print(np.dot(action,action)/0.09)
     print("step={0} reward={1}".format(i,reward))

@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-from math import cos,sin,exp
+from math import cos,sin,exp, tan
 from scipy.integrate import odeint
 from gym import spaces
 
@@ -11,36 +11,26 @@ class SatelliteEnv(gym.Env):
             return new.get(key)
         else:
             return default.get(key)
-
-    def _eulerToq(self, euler):
-        euler = euler/2.0
-        t1,t2,t3= euler[0], euler[1], euler[2]
-        q0 = cos(t2) * cos(t1) * cos(t3) - sin(t2) * sin(t1) * sin(t3)
-        q1 = cos(t2) * sin(t1) * cos(t3) - sin(t2) * cos(t1) * sin(t3)
-        q2 = sin(t2) * cos(t1) * cos(t3) + cos(t2) * sin(t1) * sin(t3)
-        q3 = sin(t2) * sin(t1) * cos(t3) + cos(t2) * cos(t1) * sin(t3)
-        return np.array([q0,q1,q2,q3])
     
     def _odefun(self, y, t, T):
-        dq = self._wToqhat(y[0:4],y[4:7], self.w0)
-        w = y[4:7]
-        omega = y[7:10]
+        dtheta = self._wTothat(y[0:3],y[3:6], self.w0)
+        w = y[3:6]
+        omega = y[6:9]
         dw = np.dot(self.Ib_inverse,T-np.cross(w,np.dot(self.Ib,w)+np.dot(self.Cw,omega)))
         domega = -np.dot(self.Cw_inverse,T)
-        return np.concatenate((dq, dw, domega, y[0:4]))
+        return np.concatenate((dtheta, dw, domega, y[0:3]))
 
-    def _wToqhat(self,q,w,w0):
-        Abo = np.array([[q[0]**2+q[1]**2-q[2]**2-q[3]**2, 2*(q[1]*q[2]+q[0]*q[3]), 2*(q[1]*q[3]+q[0]*q[2])],
-                        [2*(q[1]*q[2]-q[0]*q[3]) , q[0]**2-q[1]**2+q[2]**2-q[3]**2 , 2*(q[2]*q[3]+q[0]*q[1])],
-                        [2*(q[0]*q[3]+q[0]*q[2]) , 2*(q[2]*q[3]-q[1]*q[0] ), q[0]**2-q[1]**2-q[2]**2+q[3]**2]])
-        woi = [0,w0,0]
-        woib = np.dot(Abo, woi)
-        q0 = q[0]
-        q1 = q[1:4]
-        wbo = w-woib
-        dq0 = -0.5*np.dot(q1,wbo)
-        dq1 = np.cross(q1,wbo)+q0*wbo/2;
-        return np.array([dq0,dq1[0],dq1[1],dq1[2]])
+    def _wTothat(self,theta,w,w0):
+        t1 = theta[0]
+        t2 = theta[1]
+        t3 = theta[2]
+        w1 = w[0]
+        w2 = w[1]
+        w3 = w[2]
+        dt1 = w1*cos(t2)+w2*sin(t2)+w0*sin(t3)
+        dt2 = w2 - tan(t1*(w3*cos(t2)-w1*sin(t2)))+w0*cos(t3)/cos(t1)
+        dt3 = (w3*cos(t2)-w1*sin(t2)-w0*sin(t1)*cos(t3))/cos(t1)
+        return np.array([dt1,dt2,dt3])
     
     def __init__(self, parameter=dict(),debug=False):
         self.defaultParameter={
@@ -67,46 +57,25 @@ class SatelliteEnv(gym.Env):
 
     def _step(self, action):
         t = np.linspace(0, self.tsapn, 10)
-        y_init = np.concatenate((self.q, self.wb, self.omega, self.sq))
-        #q = self.q
-        #Abo = np.array([[q[0]**2+q[1]**2-q[2]**2-q[3]**2, 2*(q[1]*q[2]+q[0]*q[3]), 2*(q[1]*q[3]+q[0]*q[2])],
-        #           [2*(q[1]*q[2]-q[0]*q[3]) , q[0]**2-q[1]**2+q[2]**2-q[3]**2 , 2*(q[2]*q[3]+q[0]*q[1])],
-        #           [2*(q[0]*q[3]+q[0]*q[2]) , 2*(q[2]*q[3]-q[1]*q[0] ), q[0]**2-q[1]**2-q[2]**2+q[3]**2]])
-        #woi = [0,w0,0]
-        #woib = np.dot(Abo, woi)
-        #print("start q={0} wb={1}".format(self.q,self.wb))
-        #q = self.q
+        y_init = np.concatenate((self.theta, self.wb, self.omega, self.stheta))
         states = odeint(self._odefun, y_init, t, args=(action,), printmessg=True)
         for state in states[:-1]:
             self.state_list.append(state)
 
-        self.q = states[-1, 0:4]
-        self.wb = states[-1, 4:7]
-        self.omega = states[-1, 7:10]
-        self.sq = states[-1, 10:14]
-        #Abo = np.array([[q[0]**2+q[1]**2-q[2]**2-q[3]**2, 2*(q[1]*q[2]+q[0]*q[3]), 2*(q[1]*q[3]+q[0]*q[2])],
-        #           [2*(q[1]*q[2]-q[0]*q[3]) , q[0]**2-q[1]**2+q[2]**2-q[3]**2 , 2*(q[2]*q[3]+q[0]*q[1])],
-        #           [2*(q[0]*q[3]+q[0]*q[2]) , 2*(q[2]*q[3]-q[1]*q[0] ), q[0]**2-q[1]**2-q[2]**2+q[3]**2]])
-        #woi = [0,w0,0]
-        #woib = np.dot(Abo, woi)
-        #print("end q={0}".format(self.q))
-        #print("rate={0}".format((self.q[1:4]-q[1:4])/self.wb))
-        #print(states)
+        self.theta = states[-1, 0:3]
+        self.wb = states[-1, 3:6]
+        self.omega = states[-1, 6:9]
+        self.stheta = states[-1, 9:12]
 
-        tmp = self.q - [1,0,0,0]
-        #reward =  (-10 * np.dot(tmp,tmp) - np.dot(action,action)*20)#*exp(self.step_count*self.tsapn/500)
+        tmp = theta
         reward =  (- np.sum(np.abs(tmp)) - np.sum(np.abs(action)))
         done = False
         self.step_count = self.step_count+1
         if (self.step_count*self.tsapn>1000 or reward<-0.5) and self.step_count*self.tsapn>500:
             done = True
             
-        #return np.concatenate((self.q, self.wb, self.sq)), reward, done, { }
-        return np.concatenate((self.q, self.wb)), reward, done, { }
+        return np.concatenate((self.theta, self.wb)), reward, done, { }
 
-
-    # def _seed(self, seed = None):
-    #     pass
 
     def _reset(self):
         I = self._getParameter(self.defaultParameter, self.parameter, "I")
@@ -128,11 +97,10 @@ class SatelliteEnv(gym.Env):
         self.Ib = np.diag(Ieig)
         self.Ib_inverse = np.diag(1/Ieig)
         self.step_count = 0
-        self.q = self._eulerToq(theta)
+        self.theta = theta
         self.state_list = list()
-        self.sq = np.zeros(4, dtype=np.float32)
-        #return np.concatenate((self.q, self.wb, self.sq))s
-        return np.concatenate((self.q, self.wb))
+        self.stheta = np.zeros(3, dtype=np.float32)
+        return np.concatenate((self.theta, self.wb))
 
     def _render(self, mode='human', close=False):
         pass
