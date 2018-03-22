@@ -2,7 +2,7 @@ import numpy as np
 from multiprocessing import Process, Semaphore, Queue
 from env.SatelliteEnv import SatelliteEnv
 
-def envblock(n, parameter, lockself, lockmain, q, state_dim = 7):
+def envblock(n, parameter, lockself, lockmain, q, state_dim = 6):
     envs = list()
     states = np.zeros([n, state_dim], dtype=np.float32)
     rewards = np.zeros(n, dtype=np.float32)

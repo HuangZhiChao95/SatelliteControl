@@ -60,7 +60,7 @@ for i in range(processnum):
     lockenv = Semaphore(0)
     lockmain = Semaphore(0)
     q = Queue()
-    process = Process(target=envblock, args=(batchsize, penv, lockenv, lockmain, q, 7))
+    process = Process(target=envblock, args=(batchsize, penv, lockenv, lockmain, q, 6))
 
     processes.append(process)
     lockenvs.append(lockenv)

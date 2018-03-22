@@ -8,11 +8,11 @@ import os
 
 
 class LQR:
-    def __init__(self, init_std=1e-2, tpsan=0.5, batch_size=16, process_num=4, state_dim=6, action_dim=3, T=200,
+    def __init__(self, init_std=1e-1, tpsan=0.5, batch_size=16, process_num=4, state_dim=6, action_dim=3, T=200,
                  savename="lqr"):
         self.model = Model(init_std=init_std)
         self.tspan = tpsan
-        self.T = int(T / self.tspan)
+        self.T = T#int(T / self.tspan)
         self.batch_size = batch_size
         self.process_num = process_num
         self.state_dim = state_dim
@@ -33,7 +33,7 @@ class LQR:
     def _init_env(self):
         penv = {
             "tspan": self.tspan,
-            "theta": np.diag([1, 1, 1]),
+            "theta": np.diag([0.5, 0.5, 0.5]),
             "wb": np.diag([0.01, 0.01, 0.01])
         }
         p_testenv = {
@@ -51,7 +51,7 @@ class LQR:
             lockenv = Semaphore(0)
             lockmain = Semaphore(0)
             q = Queue()
-            process = Process(target=envblock, args=(self.batch_size, penv, lockenv, lockmain, q, 7))
+            process = Process(target=envblock, args=(self.batch_size, penv, lockenv, lockmain, q, 6))
             self.processes.append(process)
             self.lockenvs.append(lockenv)
             self.lockmains.append(lockmain)
@@ -64,7 +64,7 @@ class LQR:
         actions = np.zeros([self.batch_size * self.process_num * self.T, self.action_dim], dtype=np.float32)
         next_states = np.zeros([self.batch_size * self.process_num * self.T, self.state_dim], dtype=np.float32)
         action = np.zeros([self.batch_size * self.process_num, self.action_dim], dtype=np.float32)
-        state = np.zeros([self.batch_size * self.process_num, self.state_dim + 1], dtype=np.float32)
+        state = np.zeros([self.batch_size * self.process_num, self.state_dim], dtype=np.float32)
         head = 0
         for j in range(self.process_num):
             self.queues[j].put("reset")
@@ -77,6 +77,7 @@ class LQR:
             state[self.batch_size * j:(j + 1) * self.batch_size, :] = self.queues[j].get()
 
         for i in range(self.T):
+            print(i)
             for j in range(self.batch_size * self.process_num):
                 action[j] = np.matmul(self.K_list[i], state[j] - self.xhat[i]) + self.k_list[i] + self.uhat[i]
 
@@ -92,7 +93,13 @@ class LQR:
 
             for j in range(self.process_num):
                 state_block, _, __ = self.queues[j].get()
-                next_states[head:head + self.batch_size, :] = state_block[:]
+                #for k in range(self.batch_size):
+                #    print("{0} {1}".format(k,state_block[k]))
+                # print("action")
+                # print((state_block[:,3:6]-state[j * self.batch_size:(j + 1) * self.batch_size, 3:6])/action[j * self.batch_size:(j + 1) * self.batch_size, :])
+                # print("w_v")
+                # print((state_block[:,0:3]-state[j * self.batch_size:(j + 1) * self.batch_size, 0:3])/state[j * self.batch_size:(j + 1) * self.batch_size, 3:6])
+                next_states[head:head + self.batch_size, :] = state_block
                 head = head + self.batch_size
                 state[j * self.batch_size:(j + 1) * self.batch_size, :] = state_block
 
@@ -150,6 +157,7 @@ class LQR:
     def _forward(self):
         x = np.array([0.5, 0.4, 0.3, 0.01, 0.01, 0.01])
         self.test_env.reset()
+        print("reset")
         for i in range(self.T):
             u = np.matmul(self.K_list[i], x - self.xhat[i]) + self.k_list[i] + self.uhat[i]
             self.xhat[i] = x
@@ -159,17 +167,22 @@ class LQR:
             print(self.xhat[i])
             print(self.uhat[i])
 
-    def run(self, lr_rate=1e-3):
+    def run(self, lr_rate=1e-1):
         summary_writer = tf.summary.FileWriter("./log")
-        with tf.Session() as sess:
+        config = tf.ConfigProto()
+        config.log_device_placement = False
+        config.gpu_options.allow_growth = True
+        with tf.Session(config=config) as sess:
             sess.run(tf.global_variables_initializer())
+            print("reset")
             for i in range(self.T):
                 self.K_list[i] = np.array(
                     [[-0.5, 0, 0, -0.5, 0, 0], [0, -0.5, 0, 0, -0.5, 0], [0, 0, -0.5, 0, 0, -0.5]])
             self.collect_sample()
             for i in range(1000):
-                self.model.update(lr_rate=lr_rate, summary=False)
-                print(i)
+                loss, summary_str = self.model.update(lr_rate=lr_rate, summary=True)
+                print("iteration={0} loss={1}".format(i, loss))
+                summary_writer.add_summary(summary_str, i)
 
             for i in range(20000):
                 self._backward()

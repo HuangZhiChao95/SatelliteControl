@@ -3,8 +3,8 @@ import numpy as np
 
 
 class Model:
-    def __init__(self, unit=[128, 128, 128], state_dim=6, action_dim=3, init_std=1e-2, act=tf.nn.relu,
-                 tspan=0.5):
+    def __init__(self, unit=[128], state_dim=6, action_dim=3, init_std=1e-2, act=tf.nn.relu,
+                 tspan=0.5, w0=0.001097231046810):
         self.state_dim = state_dim
         self.input = tf.placeholder(dtype=tf.float32, shape=[None, state_dim + action_dim], name="input")
         self.output = tf.placeholder(dtype=tf.float32, shape=[None, state_dim], name="action")
@@ -12,7 +12,7 @@ class Model:
         self.phase_train = tf.placeholder(dtype=tf.bool, name="phase_train")
         self.w_weight = tf.placeholder(dtype=tf.float32, name="w_weight")
         self.tspan = tspan
-
+        self.w0 = w0
         self.action_dim = action_dim
 
         unit = [state_dim + action_dim] + unit + [state_dim]
@@ -31,15 +31,15 @@ class Model:
         q = tf.slice(self.input, [0, 0], [-1, 3])
         w = tf.slice(self.input, [0, 3], [-1, 3])
         a = tf.slice(self.input, [0, 6], [-1, 3])
-        q_next = self._linear_op(w, 50, 1, "kq1") + q  # self._linear_op(a, 0.05, 2, "kq2") + q
-        w_next = self._linear_op(a, 50, 1, "kw1") + w  # self._linear_op(a, 0.05, 2, "kw2") + w
-        next_state_linear = tf.concat([q, w], axis=1)
+        q_next = self._q_model(q, w, w0) + q  # self._linear_op(a, 0.05, 2, "kq2") + q
+        w_next = self._linear_op(a, 0.1, 1, "kw1") + w  # self._linear_op(a, 0.05, 2, "kw2") + w
+        next_state_linear = tf.concat([q_next, w_next], axis=1)
         self.next_state_model = network + next_state_linear
         # print(self.output.shape)
         # print(self.next_state_model.shape)
         diff = tf.abs(self.next_state_model - self.output)
         diff_q = tf.reduce_mean(tf.slice(diff, [0, 0], [-1, 3]))
-        diff_w = tf.reduce_mean(tf.slice(diff, [0, 0], [-1, 3])) * self.w_weight
+        diff_w = tf.reduce_mean(tf.slice(diff, [0, 3], [-1, 3])) * self.w_weight
         self.loss = diff_q + diff_w
         tf.summary.scalar(tensor=self.loss, name="loss")
         self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss)
@@ -53,9 +53,23 @@ class Model:
         k = tf.Variable(init * self.tspan, name=name)
         tf.summary.scalar(tensor=k, name=name)
         tmp = input
-        for i in range(p - 1):
+        for i in range(p-1):
             tmp = tf.multiply(tmp, input)
         return k * tmp
+
+    def _q_model(self, theta, w, w0):
+        t1 = tf.slice(theta, [0, 0], [-1, 1])
+        t2 = tf.slice(theta, [0, 1], [-1, 1])
+        t3 = tf.slice(theta, [0, 2], [-1, 1])
+        w1 = tf.slice(w, [0, 0], [-1, 1])
+        w2 = tf.slice(w, [0, 1], [-1, 1])
+        w3 = tf.slice(w, [0, 2], [-1, 1])
+
+        theta1 = w1 * tf.cos(t2) + w2 * tf.sin(t2) + w0 * tf.sin(t3) * self.tspan
+        theta2 = w2 - tf.tan(t1) * (w3 * tf.cos(t2) - w1 * tf.sin(t2)) + w0 * tf.cos(t3) / tf.cos(t1) * self.tspan
+        theta3 = (w3 * tf.cos(t2) - w1 * tf.sin(t2) - w0 * tf.sin(t1) * tf.cos(t3)) / tf.cos(t1) * self.tspan
+
+        return tf.concat([theta1,theta2,theta3], axis=1)
 
     def _batch_norm(self, input, dim):
         return tf.identity(input)
@@ -112,7 +126,7 @@ class Model:
         self.next_states = next_states.copy()
 
     def update(self, lr_rate, sess=None, summary=False):
-        index = (np.random.rand(32) * len(self.states)).astype(np.int32)
+        index = (np.random.rand(128) * len(self.states)).astype(np.int32)
         state = self.states[index]
         action = self.actions[index]
         next_state = self.next_states[index]
@@ -123,14 +137,16 @@ class Model:
             self.output: next_state,
             self.lr_rate: lr_rate,
             self.phase_train: True,
-            self.w_weight: 20
+            self.w_weight: 10
         }
         # print((next_state[:,0:3]-state[:,0:3])/state[:,3:6])
         # print((next_state[:,3:6]-state[:,3:6])/action)
         if summary:
             _, loss, summary_str, debug = sess.run([self.train_op, self.loss, merge_op, self.next_state_model],
                                                    feed_dict=feed_dict)
-            # print(debug)
+            #loss, summary_str, debug = sess.run([self.loss, merge_op, self.next_state_model],
+            #                                       feed_dict=feed_dict)
+            #print(debug)
             return loss, summary_str
         else:
             sess.run(self.train_op, feed_dict=feed_dict)

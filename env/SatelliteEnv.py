@@ -18,7 +18,8 @@ class SatelliteEnv(gym.Env):
         omega = y[6:9]
         dw = np.dot(self.Ib_inverse, T - np.cross(w, np.dot(self.Ib, w) + np.dot(self.Cw, omega)))
         domega = -np.dot(self.Cw_inverse, T)
-        return np.concatenate((dtheta, dw, domega, y[0:3]))
+        # print("{0} {1}".format(t,T))
+        return np.concatenate((dtheta, dw, domega))
 
     def _wTothat(self, theta, w, w0):
         t1 = theta[0]
@@ -27,9 +28,10 @@ class SatelliteEnv(gym.Env):
         w1 = w[0]
         w2 = w[1]
         w3 = w[2]
-        dt1 = w1 * cos(t2) + w2 * sin(t2) + w0 * sin(t3)
-        dt2 = w2 - tan(t1 * (w3 * cos(t2) - w1 * sin(t2))) + w0 * cos(t3) / cos(t1)
+        dt1 = w1 * cos(t2) + w3 * sin(t2) + w0 * sin(t3)
+        dt2 = w2 - tan(t1) * (w3 * cos(t2) - w1 * sin(t2)) + w0 * cos(t3) / cos(t1)
         dt3 = (w3 * cos(t2) - w1 * sin(t2) - w0 * sin(t1) * cos(t3)) / cos(t1)
+        #print("{0}_{1}".format(dt2,w2))
         return np.array([dt1, dt2, dt3])
 
     def __init__(self, parameter=dict(), debug=False):
@@ -55,7 +57,7 @@ class SatelliteEnv(gym.Env):
 
     def _step(self, action):
         t = np.linspace(0, self.tsapn, 10)
-        y_init = np.concatenate((self.theta, self.wb, self.omega, self.stheta))
+        y_init = np.concatenate((self.theta, self.wb, self.omega))
         states = odeint(self._odefun, y_init, t, args=(action,), printmessg=True)
         for state in states[:-1]:
             self.state_list.append(state)
@@ -63,7 +65,7 @@ class SatelliteEnv(gym.Env):
         self.theta = states[-1, 0:3]
         self.wb = states[-1, 3:6]
         self.omega = states[-1, 6:9]
-        self.stheta = states[-1, 9:12]
+        #self.stheta = states[-1, 9:12]
 
         tmp = self.theta
         reward = (- np.sum(np.abs(tmp)) - np.sum(np.abs(action)))
