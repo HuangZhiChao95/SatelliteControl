@@ -8,7 +8,8 @@ import os
 
 
 class LQR:
-    def __init__(self, init_std=1e-2, tpsan=0.5, batch_size=16, process_num=4, state_dim=6, action_dim=3, T=200, savename="lqr"):
+    def __init__(self, init_std=1e-2, tpsan=0.5, batch_size=16, process_num=4, state_dim=6, action_dim=3, T=200,
+                 savename="lqr"):
         self.model = Model(init_std=init_std)
         self.tspan = tpsan
         self.T = int(T / self.tspan)
@@ -77,10 +78,10 @@ class LQR:
 
         for i in range(self.T):
             for j in range(self.batch_size * self.process_num):
-                action[j] = np.matmul(self.K_list[i], state[j,1:] - self.xhat[i]) + self.k_list[i] + self.uhat[i]
+                action[j] = np.matmul(self.K_list[i], state[j] - self.xhat[i]) + self.k_list[i] + self.uhat[i]
 
             actions[head:head + self.batch_size * self.process_num, :] = action
-            states[head:head + self.batch_size * self.process_num, :] = state[:,1:]
+            states[head:head + self.batch_size * self.process_num, :] = state[:]
 
             for j in range(self.process_num):
                 self.queues[j].put(actions[self.batch_size * j:(j + 1) * self.batch_size, :])
@@ -91,7 +92,7 @@ class LQR:
 
             for j in range(self.process_num):
                 state_block, _, __ = self.queues[j].get()
-                next_states[head:head + self.batch_size, :] = state_block[:,1:]
+                next_states[head:head + self.batch_size, :] = state_block[:]
                 head = head + self.batch_size
                 state[j * self.batch_size:(j + 1) * self.batch_size, :] = state_block
 
@@ -102,16 +103,16 @@ class LQR:
         state_list = []
         action_list = []
         for i in range(self.T):
-            action = np.matmul(self.K_list[i], state_env[1:] - self.xhat[i]) + self.k_list[i] + self.uhat[i]
+            action = np.matmul(self.K_list[i], state_env - self.xhat[i]) + self.k_list[i] + self.uhat[i]
             action_list.append(action)
             state_list.append(state_env)
-            state_model = self.model.predict(state_env[1:], action)
+            state_model = self.model.predict(state_env, action)
             state_env, _, __, ___ = self.test_env.step(action)
             if i % 50 == 0:
                 print("iteration={0} step={1} l1_error={2}".format(iteration, i, np.sum(
-                    np.abs((state_model - state_env[1:]) / state_env[1:]))))
-                print(state_model - state_env[1:])
-                print(state_env[1:])
+                    np.abs((state_model - state_env) / state_env))))
+                print(state_model - state_env)
+                print(state_env)
 
         result = {
             "state": np.array(state_list),
@@ -150,12 +151,10 @@ class LQR:
         x = np.array([0.5, 0.4, 0.3, 0.01, 0.01, 0.01])
         self.test_env.reset()
         for i in range(self.T):
-            u = np.matmul(self.K_list[i], x - self.xhat[i]) + self.k_list[i] + self.uhat[i]  
+            u = np.matmul(self.K_list[i], x - self.xhat[i]) + self.k_list[i] + self.uhat[i]
             self.xhat[i] = x
             self.uhat[i] = u
-            q0 = 1-np.sum(np.square(x[0:3]))
-            tmpx, _, __, ___ = self.test_env.step(u)
-            x = tmpx[1:]
+            x, _, __, ___ = self.test_env.step(u)
             print(self.K_list[i])
             print(self.xhat[i])
             print(self.uhat[i])
@@ -165,24 +164,25 @@ class LQR:
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             for i in range(self.T):
-                self.K_list[i] = np.array([[-0.5,0,0,-0.5,0,0],[0,-0.5,0,0,-0.5,0],[0,0,-0.5,0,0,-0.5]])
+                self.K_list[i] = np.array(
+                    [[-0.5, 0, 0, -0.5, 0, 0], [0, -0.5, 0, 0, -0.5, 0], [0, 0, -0.5, 0, 0, -0.5]])
             self.collect_sample()
             for i in range(1000):
                 self.model.update(lr_rate=lr_rate, summary=False)
                 print(i)
-                
+
             for i in range(20000):
                 self._backward()
                 self.collect_sample()
                 for j in range(5):
-                    if True:#i % 10 == 0 and j % 10 == 4:
+                    if True:  # i % 10 == 0 and j % 10 == 4:
                         loss, summary_str = self.model.update(lr_rate=lr_rate, summary=True)
                         print("iteration={0} loss={1} K_sample={2}".format(i, loss, self.K_list[0]))
                         summary_writer.add_summary(summary_str, i)
                     else:
                         self.model.update(lr_rate=lr_rate, summary=False)
-                if True:#i % 100 == 0:
+                if True:  # i % 100 == 0:
                     self.store_record(i)
                 self._forward()
                 if i % 2000 == 0:
-                    lr_rate = lr_rate/2
+                    lr_rate = lr_rate / 2

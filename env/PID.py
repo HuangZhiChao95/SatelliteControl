@@ -13,25 +13,20 @@ for i in range(0,1000):
 
 states = np.array(env.state_list)
 plt.figure(1)
-plt.subplot(231)
-plt.plot(states[:,0])
-plt.subplot(234)
-for i in range(1,4):
+plt.subplot(221)
+for i in range(0,3):
     plt.plot(states[:,i])
 
-plt.subplot(232)
-for i in range(4,7):
+plt.subplot(222)
+for i in range(3,6):
     plt.plot(states[:,i])
 
-plt.subplot(235)
-for i in range(7,10):
+plt.subplot(223)
+for i in range(6,9):
     plt.plot(states[:,i])
 
-plt.subplot(233)
-plt.plot(states[:,10])
-
-plt.subplot(236)
-for i in range(11,14):
+plt.subplot(224)
+for i in range(9,12):
     plt.plot(states[:,i])
 
 plt.show()
