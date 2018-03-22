@@ -3,7 +3,7 @@ import numpy as np
 
 
 class Model:
-    def __init__(self, unit=[128, 128, 128, 256, 256], state_dim=6, action_dim=3, init_std=1e-2, act=tf.nn.relu,
+    def __init__(self, unit=[128, 128, 128], state_dim=6, action_dim=3, init_std=1e-2, act=tf.nn.relu,
                  tspan=0.5):
         self.state_dim = state_dim
         self.input = tf.placeholder(dtype=tf.float32, shape=[None, state_dim + action_dim], name="input")
@@ -43,10 +43,11 @@ class Model:
         self.loss = diff_q + diff_w
         tf.summary.scalar(tensor=self.loss, name="loss")
         self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss)
-        self._init_env()
         self.jocobi = []
         for i in range(state_dim):
-            self.jocobi.append(tf.gradients(tf.slice(self.next_state_model, [0, i], [-1, 1]), self.input))
+            tmp = tf.gradients(tf.slice(self.next_state_model, [0, i], [-1, 1]), self.input)
+            tf.summary.histogram(values = tmp, name="jocobi_{0}".format(i))
+            self.jocobi.append(tmp)
 
     def _linear_op(self, input, init, p, name):
         k = tf.Variable(init * self.tspan, name=name)
@@ -103,7 +104,7 @@ class Model:
         input = np.concatenate((state[np.newaxis, :], action[np.newaxis, :]), axis=1)
         gradient_list = sess.run(self.jocobi, feed_dict={self.input: input, self.phase_train: False})
         joboci = np.array(gradient_list)
-        return joboci
+        return joboci.squeeze()
 
     def store(self, states, actions, next_states):
         self.states = states.copy()

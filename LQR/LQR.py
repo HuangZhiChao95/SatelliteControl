@@ -59,9 +59,9 @@ class LQR:
             process.start()
 
     def collect_sample(self):
-        states = np.zeros([self.batch_size * self.process_num * self.T, self.state_dim + 1], dtype=np.float32)
+        states = np.zeros([self.batch_size * self.process_num * self.T, self.state_dim], dtype=np.float32)
         actions = np.zeros([self.batch_size * self.process_num * self.T, self.action_dim], dtype=np.float32)
-        next_states = np.zeros([self.batch_size * self.process_num * self.T, self.state_dim + 1], dtype=np.float32)
+        next_states = np.zeros([self.batch_size * self.process_num * self.T, self.state_dim], dtype=np.float32)
         action = np.zeros([self.batch_size * self.process_num, self.action_dim], dtype=np.float32)
         state = np.zeros([self.batch_size * self.process_num, self.state_dim + 1], dtype=np.float32)
         head = 0
@@ -77,10 +77,10 @@ class LQR:
 
         for i in range(self.T):
             for j in range(self.batch_size * self.process_num):
-                action[j] = np.matmul(self.K_list[i], state[j] - self.xhat[i]) + self.k_list[i] + self.uhat[i]
+                action[j] = np.matmul(self.K_list[i], state[j,1:] - self.xhat[i]) + self.k_list[i] + self.uhat[i]
 
-            actions[head:head + self.batch_size * self.process_num, :] = actions
-            states[head:head + self.batch_size * self.process_num, :] = state
+            actions[head:head + self.batch_size * self.process_num, :] = action
+            states[head:head + self.batch_size * self.process_num, :] = state[:,1:]
 
             for j in range(self.process_num):
                 self.queues[j].put(actions[self.batch_size * j:(j + 1) * self.batch_size, :])
@@ -91,7 +91,7 @@ class LQR:
 
             for j in range(self.process_num):
                 state_block, _, __ = self.queues[j].get()
-                next_states[head:head + self.batch_size, :] = state_block
+                next_states[head:head + self.batch_size, :] = state_block[:,1:]
                 head = head + self.batch_size
                 state[j * self.batch_size:(j + 1) * self.batch_size, :] = state_block
 
@@ -132,6 +132,8 @@ class LQR:
             Q = np.eye(9) + np.matmul(np.matmul(np.transpose(F), V), F)
             q = np.matmul(np.transpose(F), v)
             K = -np.matmul(np.linalg.inv(Q[6:, 6:]), Q[6:, 0:6])
+            print(F)
+            print(K)
             k = -np.matmul(np.linalg.inv(Q[6:, 6:]), q[6:])
             V = Q[0:6, 0:6] + np.matmul(Q[0:6, 6:], K) + np.matmul(np.transpose(K), Q[6:, 0:6]) + np.matmul(
                 np.matmul(np.transpose(K), Q[6:, 6:]), k)
@@ -148,25 +150,39 @@ class LQR:
         x = np.array([0.5, 0.4, 0.3, 0.01, 0.01, 0.01])
         self.test_env.reset()
         for i in range(self.T):
-            u = np.matmul(self.K_list[i], x - self.xhat[i]) + self.k_list[i] + self.uhat[i]
+            u = np.matmul(self.K_list[i], x - self.xhat[i]) + self.k_list[i] + self.uhat[i]  
             self.xhat[i] = x
-            self.uhat = u
-            x, _, __, ___ = self.test_env.step(u)
+            self.uhat[i] = u
+            q0 = 1-np.sum(np.square(x[0:3]))
+            tmpx, _, __, ___ = self.test_env.step(u)
+            x = tmpx[1:]
+            print(self.K_list[i])
+            print(self.xhat[i])
+            print(self.uhat[i])
 
     def run(self, lr_rate=1e-3):
         summary_writer = tf.summary.FileWriter("./log")
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
+            for i in range(self.T):
+                self.K_list[i] = np.array([[-0.5,0,0,-0.5,0,0],[0,-0.5,0,0,-0.5,0],[0,0,-0.5,0,0,-0.5]])
+            self.collect_sample()
+            for i in range(1000):
+                self.model.update(lr_rate=lr_rate, summary=False)
+                print(i)
+                
             for i in range(20000):
                 self._backward()
                 self.collect_sample()
-                for j in range(10):
-                    if i % 100 == 0 and j % 10 == 9:
+                for j in range(5):
+                    if True:#i % 10 == 0 and j % 10 == 4:
                         loss, summary_str = self.model.update(lr_rate=lr_rate, summary=True)
-                        print("iteration={0} loss={1}".format(i, loss))
+                        print("iteration={0} loss={1} K_sample={2}".format(i, loss, self.K_list[0]))
                         summary_writer.add_summary(summary_str, i)
                     else:
                         self.model.update(lr_rate=lr_rate, summary=False)
-                if i % 500 == 0:
+                if True:#i % 100 == 0:
                     self.store_record(i)
                 self._forward()
+                if i % 2000 == 0:
+                    lr_rate = lr_rate/2
