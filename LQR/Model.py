@@ -1,9 +1,9 @@
 import tensorflow as tf
 import numpy as np
-
+from sklearn import linear_model
 
 class Model:
-    def __init__(self, unit=[128], state_dim=6, action_dim=3, init_std=1e-2, act=tf.nn.relu,
+    def __init__(self, unit=[], state_dim=6, action_dim=3, init_std=1e-2, act=tf.nn.relu,
                  tspan=0.5, w0=0.001097231046810):
         self.state_dim = state_dim
         self.input = tf.placeholder(dtype=tf.float32, shape=[None, state_dim + action_dim], name="input")
@@ -14,7 +14,7 @@ class Model:
         self.tspan = tspan
         self.w0 = w0
         self.action_dim = action_dim
-
+        self.linear_fit = linear_model.LinearRegression()
         unit = [state_dim + action_dim] + unit + [state_dim]
         with tf.name_scope("input"):
             network = self._batch_norm(self.input, state_dim + action_dim)
@@ -31,12 +31,16 @@ class Model:
         q = tf.slice(self.input, [0, 0], [-1, 3])
         w = tf.slice(self.input, [0, 3], [-1, 3])
         a = tf.slice(self.input, [0, 6], [-1, 3])
+        w_a = tf.slice(self.input, [0, 3], [-1, 6])
+        self.debug=[]
         q_next = self._q_model(q, w, w0) + q  # self._linear_op(a, 0.05, 2, "kq2") + q
-        w_next = self._linear_op(a, 0.1, 1, "kw1") + w  # self._linear_op(a, 0.05, 2, "kw2") + w
+        w_next = self._linear_op(a, 0.1, 1, "kw1") #+ self._linear_op(a, 0.01, 2, "kw1") + w  # self._linear_op(a, 0.05, 2, "kw2") + w
         next_state_linear = tf.concat([q_next, w_next], axis=1)
-        self.next_state_model = network + next_state_linear
+        self.next_state_model = next_state_linear#+network
         # print(self.output.shape)
         # print(self.next_state_model.shape)
+        #self.debug = (tf.slice(self.output,[0,3],[-1,3])-w)/tf.slice(self.input,[0,6],[-1,3])
+        #self.debug = (tf.slice(self.next_state_model,[0,3],[-1,3])-w)/a
         diff = tf.abs(self.next_state_model - self.output)
         diff_q = tf.reduce_mean(tf.slice(diff, [0, 0], [-1, 3]))
         diff_w = tf.reduce_mean(tf.slice(diff, [0, 3], [-1, 3])) * self.w_weight
@@ -49,13 +53,15 @@ class Model:
             tf.summary.histogram(values = tmp, name="jocobi_{0}".format(i))
             self.jocobi.append(tmp)
 
-    def _linear_op(self, input, init, p, name):
-        k = tf.Variable(init * self.tspan, name=name)
-        tf.summary.scalar(tensor=k, name=name)
+    def _linear_op(self, input, init_std, order, name):
+        k = tf.Variable(tf.truncated_normal([3,3], stddev=init_std))
+        self.debug.append(k)
+        #k = tf.Variable(init * self.tspan, name=name)
+        #tf.summary.scalar(tensor=k, name=name)
         tmp = input
-        for i in range(p-1):
+        for i in range(order-1):
             tmp = tf.multiply(tmp, input)
-        return k * tmp
+        return tf.matmul(input, k)
 
     def _q_model(self, theta, w, w0):
         t1 = tf.slice(theta, [0, 0], [-1, 1])
@@ -126,7 +132,7 @@ class Model:
         self.next_states = next_states.copy()
 
     def update(self, lr_rate, sess=None, summary=False):
-        index = (np.random.rand(128) * len(self.states)).astype(np.int32)
+        index = (np.random.rand(1024) * len(self.states)).astype(np.int32)
         state = self.states[index]
         action = self.actions[index]
         next_state = self.next_states[index]
@@ -142,11 +148,13 @@ class Model:
         # print((next_state[:,0:3]-state[:,0:3])/state[:,3:6])
         # print((next_state[:,3:6]-state[:,3:6])/action)
         if summary:
-            _, loss, summary_str, debug = sess.run([self.train_op, self.loss, merge_op, self.next_state_model],
+            self.linear_fit.fit(np.concatenate((self.actions,self.actions*self.actions),axis=1),self.next_states[:,3:6]-self.states[:,3:6])
+            print(self.linear_fit.coef_)
+            _, loss, summary_str, debug = sess.run([self.train_op, self.loss, merge_op, self.debug],
                                                    feed_dict=feed_dict)
             #loss, summary_str, debug = sess.run([self.loss, merge_op, self.next_state_model],
             #                                       feed_dict=feed_dict)
-            #print(debug)
+            print(debug)
             return loss, summary_str
         else:
             sess.run(self.train_op, feed_dict=feed_dict)

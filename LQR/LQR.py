@@ -12,7 +12,7 @@ class LQR:
                  savename="lqr"):
         self.model = Model(init_std=init_std)
         self.tspan = tpsan
-        self.T = T#int(T / self.tspan)
+        self.T = int(T / self.tspan)
         self.batch_size = batch_size
         self.process_num = process_num
         self.state_dim = state_dim
@@ -77,15 +77,15 @@ class LQR:
             state[self.batch_size * j:(j + 1) * self.batch_size, :] = self.queues[j].get()
 
         for i in range(self.T):
-            print(i)
+            #print(i)
             for j in range(self.batch_size * self.process_num):
                 action[j] = np.matmul(self.K_list[i], state[j] - self.xhat[i]) + self.k_list[i] + self.uhat[i]
 
             actions[head:head + self.batch_size * self.process_num, :] = action
-            states[head:head + self.batch_size * self.process_num, :] = state[:]
+            states[head:head + self.batch_size * self.process_num, :] = state
 
             for j in range(self.process_num):
-                self.queues[j].put(actions[self.batch_size * j:(j + 1) * self.batch_size, :])
+                self.queues[j].put(action[self.batch_size * j:(j + 1) * self.batch_size, :])
                 self.lockenvs[j].release()
 
             for j in range(self.process_num):
@@ -95,8 +95,9 @@ class LQR:
                 state_block, _, __ = self.queues[j].get()
                 #for k in range(self.batch_size):
                 #    print("{0} {1}".format(k,state_block[k]))
-                # print("action")
-                # print((state_block[:,3:6]-state[j * self.batch_size:(j + 1) * self.batch_size, 3:6])/action[j * self.batch_size:(j + 1) * self.batch_size, :])
+                #if i==0:
+                #    print("action")
+                #    print((state_block[:,3:6]-state[j * self.batch_size:(j + 1) * self.batch_size, 3:6])/action[j * self.batch_size:(j + 1) * self.batch_size, :])
                 # print("w_v")
                 # print((state_block[:,0:3]-state[j * self.batch_size:(j + 1) * self.batch_size, 0:3])/state[j * self.batch_size:(j + 1) * self.batch_size, 3:6])
                 next_states[head:head + self.batch_size, :] = state_block
@@ -118,7 +119,9 @@ class LQR:
             if i % 50 == 0:
                 print("iteration={0} step={1} l1_error={2}".format(iteration, i, np.sum(
                     np.abs((state_model - state_env) / state_env))))
+                print("state diff")
                 print(state_model - state_env)
+                print("state_env")
                 print(state_env)
 
         result = {
@@ -134,14 +137,17 @@ class LQR:
     def _backward(self):
         V = np.zeros((6, 6))
         v = np.zeros(6)
-
+        print("backward")
         for i in reversed(range(self.T)):
             F = self.model.getJocobi(self.xhat[i], self.uhat[i])
             Q = np.eye(9) + np.matmul(np.matmul(np.transpose(F), V), F)
             q = np.matmul(np.transpose(F), v)
             K = -np.matmul(np.linalg.inv(Q[6:, 6:]), Q[6:, 0:6])
-            print(F)
-            print(K)
+            if i==0:
+                print("F_sample T=0")
+                print(F)
+                print("K_sample T=0")
+                print(K)
             k = -np.matmul(np.linalg.inv(Q[6:, 6:]), q[6:])
             V = Q[0:6, 0:6] + np.matmul(Q[0:6, 6:], K) + np.matmul(np.transpose(K), Q[6:, 0:6]) + np.matmul(
                 np.matmul(np.transpose(K), Q[6:, 6:]), k)
@@ -157,17 +163,17 @@ class LQR:
     def _forward(self):
         x = np.array([0.5, 0.4, 0.3, 0.01, 0.01, 0.01])
         self.test_env.reset()
-        print("reset")
+        print("forward")
         for i in range(self.T):
             u = np.matmul(self.K_list[i], x - self.xhat[i]) + self.k_list[i] + self.uhat[i]
             self.xhat[i] = x
             self.uhat[i] = u
             x, _, __, ___ = self.test_env.step(u)
-            print(self.K_list[i])
-            print(self.xhat[i])
-            print(self.uhat[i])
+            #print(self.K_list[i])
+            #print(self.xhat[i])
+            #print(self.uhat[i])
 
-    def run(self, lr_rate=1e-1):
+    def run(self, lr_rate=1e-4):
         summary_writer = tf.summary.FileWriter("./log")
         config = tf.ConfigProto()
         config.log_device_placement = False
@@ -179,23 +185,23 @@ class LQR:
                 self.K_list[i] = np.array(
                     [[-0.5, 0, 0, -0.5, 0, 0], [0, -0.5, 0, 0, -0.5, 0], [0, 0, -0.5, 0, 0, -0.5]])
             self.collect_sample()
-            for i in range(1000):
+            for i in range(500):
                 loss, summary_str = self.model.update(lr_rate=lr_rate, summary=True)
                 print("iteration={0} loss={1}".format(i, loss))
                 summary_writer.add_summary(summary_str, i)
 
-            for i in range(20000):
+            for i in range(2000):
                 self._backward()
                 self.collect_sample()
                 for j in range(5):
                     if True:  # i % 10 == 0 and j % 10 == 4:
                         loss, summary_str = self.model.update(lr_rate=lr_rate, summary=True)
-                        print("iteration={0} loss={1} K_sample={2}".format(i, loss, self.K_list[0]))
+                        print("iteration={0} loss={1}".format(i, loss))
                         summary_writer.add_summary(summary_str, i)
                     else:
                         self.model.update(lr_rate=lr_rate, summary=False)
                 if True:  # i % 100 == 0:
                     self.store_record(i)
                 self._forward()
-                if i % 2000 == 0:
+                if i % 50 == 0:
                     lr_rate = lr_rate / 2

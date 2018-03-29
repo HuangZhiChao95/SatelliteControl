@@ -61,7 +61,7 @@ class SatelliteEnv(gym.Env):
         states = odeint(self._odefun, y_init, t, args=(action,), printmessg=True)
         for state in states[:-1]:
             self.state_list.append(state)
-
+        #print((states[-1,3:6]-self.wb)/action)
         self.theta = states[-1, 0:3]
         self.wb = states[-1, 3:6]
         self.omega = states[-1, 6:9]
