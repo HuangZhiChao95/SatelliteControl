@@ -3,65 +3,31 @@ import numpy as np
 from sklearn import linear_model
 
 class Model:
-    def __init__(self, unit=[], state_dim=6, action_dim=3, init_std=1e-2, act=tf.nn.relu,
-                 tspan=0.5, w0=0.001097231046810):
+    def __init__(self, state_dim=6, action_dim=3, tspan=0.5, w0=0.001097231046810):
         self.state_dim = state_dim
         self.input = tf.placeholder(dtype=tf.float32, shape=[None, state_dim + action_dim], name="input")
-        self.output = tf.placeholder(dtype=tf.float32, shape=[None, state_dim], name="action")
-        self.lr_rate = tf.placeholder(dtype=tf.float32, name="lr_rate")
-        self.phase_train = tf.placeholder(dtype=tf.bool, name="phase_train")
-        self.w_weight = tf.placeholder(dtype=tf.float32, name="w_weight")
+        self.w_linear = tf.placeholder(dtype=tf.float32, shape=[6, action_dim], name="w_linear")
+        self.w_square = tf.placeholder(dtype=tf.float32, shape=[6, action_dim], name="w_square")
+        self.w_bias = tf.placeholder(dtype=tf.float32, shape=[action_dim], name="w_bias")
         self.tspan = tspan
         self.w0 = w0
         self.action_dim = action_dim
         self.linear_fit = linear_model.LinearRegression()
-        unit = [state_dim + action_dim] + unit + [state_dim]
-        with tf.name_scope("input"):
-            network = self._batch_norm(self.input, state_dim + action_dim)
 
-        for i in range(0, len(unit) - 1):
-            if i == len(unit) - 2:
-                act = tf.identity
-                batch_norm = False
-            else:
-                batch_norm = True
-            with tf.name_scope("dense{0}".format(i + 1)):
-                network = self._denselayer(network, unit[i], unit[i + 1], init_std, act, batch_norm)
-        # network = network/10
         q = tf.slice(self.input, [0, 0], [-1, 3])
         w = tf.slice(self.input, [0, 3], [-1, 3])
         a = tf.slice(self.input, [0, 6], [-1, 3])
         w_a = tf.slice(self.input, [0, 3], [-1, 6])
-        self.debug=[]
-        q_next = self._q_model(q, w, w0) + q  # self._linear_op(a, 0.05, 2, "kq2") + q
-        w_next = self._linear_op(a, 0.1, 1, "kw1") #+ self._linear_op(a, 0.01, 2, "kw1") + w  # self._linear_op(a, 0.05, 2, "kw2") + w
+
+        q_next = self._q_model(q, w, w0) + q
+        w_next = w + tf.nn.bias_add(tf.matmul(w_a, self.w_linear) + tf.matmul(w_a, self.w_square), self.w_bias)
         next_state_linear = tf.concat([q_next, w_next], axis=1)
-        self.next_state_model = next_state_linear#+network
-        # print(self.output.shape)
-        # print(self.next_state_model.shape)
-        #self.debug = (tf.slice(self.output,[0,3],[-1,3])-w)/tf.slice(self.input,[0,6],[-1,3])
-        #self.debug = (tf.slice(self.next_state_model,[0,3],[-1,3])-w)/a
-        diff = tf.abs(self.next_state_model - self.output)
-        diff_q = tf.reduce_mean(tf.slice(diff, [0, 0], [-1, 3]))
-        diff_w = tf.reduce_mean(tf.slice(diff, [0, 3], [-1, 3])) * self.w_weight
-        self.loss = diff_q + diff_w
-        tf.summary.scalar(tensor=self.loss, name="loss")
-        self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr_rate).minimize(self.loss)
+        self.next_state_model = next_state_linear
         self.jocobi = []
         for i in range(state_dim):
             tmp = tf.gradients(tf.slice(self.next_state_model, [0, i], [-1, 1]), self.input)
             tf.summary.histogram(values = tmp, name="jocobi_{0}".format(i))
             self.jocobi.append(tmp)
-
-    def _linear_op(self, input, init_std, order, name):
-        k = tf.Variable(tf.truncated_normal([3,3], stddev=init_std))
-        self.debug.append(k)
-        #k = tf.Variable(init * self.tspan, name=name)
-        #tf.summary.scalar(tensor=k, name=name)
-        tmp = input
-        for i in range(order-1):
-            tmp = tf.multiply(tmp, input)
-        return tf.matmul(input, k)
 
     def _q_model(self, theta, w, w0):
         t1 = tf.slice(theta, [0, 0], [-1, 1])
@@ -77,46 +43,16 @@ class Model:
 
         return tf.concat([theta1,theta2,theta3], axis=1)
 
-    def _batch_norm(self, input, dim):
-        return tf.identity(input)
-        batch_mean, batch_var = tf.nn.moments(input, [0])
-        ema = tf.train.ExponentialMovingAverage(decay=0.5)
-
-        def mean_var_with_update():
-            ema_apply_op = ema.apply([batch_mean, batch_var])
-            with tf.control_dependencies([ema_apply_op]):
-                return tf.identity(batch_mean), tf.identity(batch_var)
-
-        mean, var = tf.cond(self.phase_train, mean_var_with_update,
-                            lambda: (ema.average(batch_mean), ema.average(batch_var)))
-
-        beta = tf.Variable(tf.zeros(shape=[dim]))
-        gamma = tf.Variable(tf.ones(shape=[dim]))
-        tf.summary.histogram(values=ema.average(batch_mean), name="batch_mean")
-        tf.summary.histogram(values=ema.average(batch_var), name="batch_var")
-        tf.summary.histogram(values=beta, name="beta")
-        tf.summary.histogram(values=gamma, name="gamma")
-        return tf.nn.batch_normalization(input, mean, var, beta, gamma, 1e-5)
-
-    def _denselayer(self, input, n_in, n_out, init_std, activation=tf.nn.relu, batch_norm=True):
-
-        w = tf.Variable(tf.truncated_normal([n_in, n_out], stddev=init_std), name="weight")
-        b = tf.Variable(tf.zeros([n_out]), name="bias")
-        relu = activation(tf.nn.bias_add(tf.matmul(input, w), b), name="relu")
-        if batch_norm:
-            output = self._batch_norm(relu, n_out)
-        else:
-            output = relu
-        tf.summary.histogram(values=w, name="weight")
-        tf.summary.histogram(values=b, name="bias")
-        tf.summary.histogram(values=relu, name="relu")
-        tf.summary.histogram(values=output, name="output")
-        return output
-
     def predict(self, state, action, sess=None):
-        sess = sess or tf.get_default_session()
         input = np.concatenate((state[np.newaxis, :], action[np.newaxis, :]), axis=1)
-        next_state = sess.run(self.next_state_model, feed_dict={self.input: input, self.phase_train: False})
+        feed_dict = {
+            self.input: input,
+            self.w_linear: self.linear_fit.coef_[:,:6],
+            self.w_square: self.linear_fit.coef_[:,6:],
+            self.w_bias: self.linear_fit.intercept_
+        }
+        sess = sess or tf.get_default_session()
+        next_state = sess.run(self.next_state_model, feed_dict=feed_dict)
         return next_state.squeeze()
 
     def getJocobi(self, state, action, sess=None):
@@ -131,30 +67,6 @@ class Model:
         self.actions = actions.copy()
         self.next_states = next_states.copy()
 
-    def update(self, lr_rate, sess=None, summary=False):
-        index = (np.random.rand(1024) * len(self.states)).astype(np.int32)
-        state = self.states[index]
-        action = self.actions[index]
-        next_state = self.next_states[index]
-        sess = sess or tf.get_default_session()
-        merge_op = tf.summary.merge_all()
-        feed_dict = {
-            self.input: np.concatenate((state, action), axis=1),
-            self.output: next_state,
-            self.lr_rate: lr_rate,
-            self.phase_train: True,
-            self.w_weight: 10
-        }
-        # print((next_state[:,0:3]-state[:,0:3])/state[:,3:6])
-        # print((next_state[:,3:6]-state[:,3:6])/action)
-        if summary:
-            self.linear_fit.fit(np.concatenate((self.actions,self.actions*self.actions),axis=1),self.next_states[:,3:6]-self.states[:,3:6])
-            print(self.linear_fit.coef_)
-            _, loss, summary_str, debug = sess.run([self.train_op, self.loss, merge_op, self.debug],
-                                                   feed_dict=feed_dict)
-            #loss, summary_str, debug = sess.run([self.loss, merge_op, self.next_state_model],
-            #                                       feed_dict=feed_dict)
-            print(debug)
-            return loss, summary_str
-        else:
-            sess.run(self.train_op, feed_dict=feed_dict)
+    def update(self):
+        w_a = np.concatenate((self.states[:,3:],self.actions),axis=1)
+        self.linear_fit.fit(np.concatenate((w_a, w_a*w_a), axis=1), self.next_states[:, 3:6] - self.states[:, 3:6])

@@ -127,6 +127,7 @@ class LQR:
         result = {
             "state": np.array(state_list),
             "action": np.array(action_list),
+            "K_list": np.array(self.K_list)
         }
 
         if not os.path.exists("record"):
@@ -174,7 +175,6 @@ class LQR:
             #print(self.uhat[i])
 
     def run(self, lr_rate=1e-4):
-        summary_writer = tf.summary.FileWriter("./log")
         config = tf.ConfigProto()
         config.log_device_placement = False
         config.gpu_options.allow_growth = True
@@ -185,23 +185,12 @@ class LQR:
                 self.K_list[i] = np.array(
                     [[-0.5, 0, 0, -0.5, 0, 0], [0, -0.5, 0, 0, -0.5, 0], [0, 0, -0.5, 0, 0, -0.5]])
             self.collect_sample()
-            for i in range(500):
-                loss, summary_str = self.model.update(lr_rate=lr_rate, summary=True)
-                print("iteration={0} loss={1}".format(i, loss))
-                summary_writer.add_summary(summary_str, i)
+            self.model.update()
 
-            for i in range(2000):
+            for i in range(100):
                 self._backward()
                 self.collect_sample()
-                for j in range(5):
-                    if True:  # i % 10 == 0 and j % 10 == 4:
-                        loss, summary_str = self.model.update(lr_rate=lr_rate, summary=True)
-                        print("iteration={0} loss={1}".format(i, loss))
-                        summary_writer.add_summary(summary_str, i)
-                    else:
-                        self.model.update(lr_rate=lr_rate, summary=False)
+                self.model.update()
                 if True:  # i % 100 == 0:
                     self.store_record(i)
                 self._forward()
-                if i % 50 == 0:
-                    lr_rate = lr_rate / 2
